@@ -1,0 +1,699 @@
+apiVersion: hbase.elenskiy.co/v1
+kind: HBase
+metadata:
+  name: hbase
+  namespace: hbase
+spec:
+  config:
+    data:
+      hdfs-site.xml: |
+        <?xml version="1.0" encoding="UTF-8"?>
+        <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+        <configuration>
+          <property>
+            <name>dfs.nameservices</name>
+            <value>aeris</value>
+          </property>
+          <property>
+            <name>dfs.ha.namenodes.aeris</name>
+            <value>nn0,nn1</value>
+          </property>
+          <property>
+            <name>dfs.namenode.rpc-address.aeris.nn0</name>
+            <value>namenode-0-hadoop.hadoop:8020</value>
+          </property>
+          <property>
+            <name>dfs.namenode.rpc-address.aeris.nn1</name>
+            <value>namenode-1-hadoop.hadoop:8020</value>
+          </property>
+          <property>
+            <name>dfs.namenode.rpc-bind-host</name>
+            <value>0.0.0.0</value>
+          </property>
+          <property>
+            <name>dfs.namenode.servicerpc-address.aeris.nn1</name>
+            <value>namenode-1-hadoop.hadoop:8021</value>
+          </property>
+          <property>
+            <name>dfs.namenode.servicerpc-address.aeris.nn0</name>
+            <value>namenode-0-hadoop.hadoop:8021</value>
+          </property>
+          <property>
+            <name>dfs.hosts.exclude</name>
+            <value>/data1/dfs.exclude</value>
+          </property>
+    
+          <property>
+            <name>dfs.namenode.servicerpc-bind-host</name>
+            <value>0.0.0.0</value>
+          </property>
+    
+          <property>
+            <name>dfs.journalnode.edits.dir</name>
+            <value>/data</value>
+          </property>
+          <property>
+            <name>dfs.namenode.shared.edits.dir</name>
+            <value>qjournal://journalnode-0-hadoop.hadoop:8485;journalnode-1-hadoop.hadoop:8485;journalnode-2-hadoop.hadoop:8485/aeris</value>
+          </property>
+          <property>
+            <name>dfs.client.failover.proxy.provider.aeris</name>
+            <value>org.apache.hadoop.hdfs.server.namenode.ha.ConfiguredFailoverProxyProvider</value>
+          </property>
+    
+          <property>
+            <name>dfs.ha.fencing.methods</name>
+            <value>shell(/bin/true)</value>
+          <description>TODO: come up with a legit shell script to fench namenodes in k8s</description>
+          </property>
+    
+          <property>
+            <name>dfs.ha.automatic-failover.enabled</name>
+            <value>true</value>
+          </property>
+          <property>
+            <name>ha.zookeeper.quorum</name>
+            <value>zookeeper-0-zookeeper.zookeeper:2181,zookeeper-1-zookeeper.zookeeper:2181,zookeeper-2-zookeeper.zookeeper:2181</value>
+          </property>
+    
+          <property>
+            <name>dfs.datanode.du.reserved</name>
+            <value>1073741824</value>
+          </property>
+    
+          <property>
+            <name>dfs.namenode.name.dir</name>
+          <value>file:///data1,file:///data2</value>
+            <description>Determines where on the local filesystem the DFS name node
+                should store the name table(fsimage).  If this is a comma-delimited list
+                of directories then the name table is replicated in all of the
+                directories, for redundancy. </description>
+          </property>
+    
+          <property>
+            <name>dfs.datanode.failed.volumes.tolerated</name>
+            <value>3</value>
+            <description>The number of volumes that are allowed to
+            fail before a datanode stops offering service. By default
+            any volume failure will cause a datanode to shutdown.
+            </description>
+          </property>
+    
+          <property>
+            <name>dfs.replication</name>
+            <value>3</value>
+            <description>Default block replication.</description>
+          </property>
+    
+          <property>
+            <name>dfs.namenode.replication.min</name>
+            <value>2</value>
+            <description>The minimum number of replicas that have to be written
+              for a write to be successfull.
+            </description>
+          </property>
+    
+          <property>
+            <name>dfs.namenode.heartbeat.recheck-interval</name>
+            <value>1800000</value>
+            <description>How many milli-seconds does a DN have to be down
+            before we replicate its data.</description>
+          </property>
+    
+          <property>
+            <name>dfs.namenode.datanode.registration.ip-hostname-check</name>
+            <value>false</value>
+            <description>Don't bother with reverse DNS checks in our env.</description>
+          </property>
+    
+          <property>
+            <name>dfs.client.read.shortcircuit</name>
+            <value>false</value>
+          </property>
+    
+          <property>
+            <name>dfs.namenode.safemode.threshold-pct</name>
+            <value>0.999f</value>
+          </property>
+    
+          <property>
+            <name>dfs.datanode.synconclose</name>
+            <value>true</value>
+            <description>
+              Make sure that all blocks are fsynced when the file is closed. Important
+              to have this option in order not to lose old data if the whole DC crashes.
+            </description>
+          </property>
+    
+          <property>
+            <name>dfs.datanode.sync.behind.writes</name>
+            <value>true</value>
+            <description>
+              Instruct the OS to enqueue all written data to disk immediately after it is written.
+              As blocks are immutable this option will smoothen out disk writes.
+            </description>
+          </property>
+    
+          <property>
+            <name>dfs.client.use.datanode.hostname</name>
+            <value>true</value>
+            <description>
+              In kubernetes environment pods change their IPs every time they are restarted.
+              HDFS assumes that the IP of datanodes aren't normally change as it's targeting baremetal.
+              This option instructs HDFS clients to use hostnames of datanodes rather than IP
+              addresses.
+            </description>
+          </property>
+    
+          <property>
+            <name>dfs.client.socket-timeout</name>
+            <value>10000</value>
+            <description>Down the DFS timeout from 60 to 10 seconds.</description>
+          </property>
+          <property>
+            <name>dfs.datanode.socket.write.timeout</name>
+            <value>10000</value>
+            <description>Down the DFS timeout from 8 * 60 to 10 seconds.</description>
+          </property>
+          <property>
+            <name>ipc.client.connect.timeout</name>
+            <value>3000</value>
+            <description>Down from 60 seconds to 3.</description>
+          </property>
+          <property>
+            <name>ipc.client.connect.max.retries.on.timeouts</name>
+            <value>2</value>
+            <description>Down from 45 seconds to 3 (2 == 3 retries).</description>
+          </property>
+          <property>
+            <name>dfs.namenode.stale.datanode.interval</name>
+            <value>20000</value>
+            <description>Down from default 30 seconds</description>
+          </property>
+          <property>
+            <name>dfs.namenode.avoid.read.stale.datanode</name>
+            <value>true</value>
+            <description>Enable stale state in hdfs</description>
+          </property>
+          <property>
+            <name>dfs.namenode.avoid.write.stale.datanode</name>
+            <value>true</value>
+            <description>Enable stale state in hdfs</description>
+          </property>
+          <property>
+            <name>dfs.datanode.data.dir.perm</name>
+            <value>u+rwx,g+rwxt,o+rx</value>
+            <description>
+              Permissions for the directories on on the local filesystem where the DFS data node store its blocks.
+              The permissions can either be octal or symbolic.
+    
+              On GKE, PV is mounted with the setgid bit (2775). From man chmod
+              2000    (the setgid bit).  Executable files with this bit set will
+                      run with effective gid set to the gid of the file owner.
+            </description>
+          </property>
+        </configuration>
+    
+      # If you update core-site make sure to also update core-site-yarn.xml
+      # The jinja DRY alternative using set is awkard with whitespace, so this is a simpler
+      # stopgap towards configuring each component separately.
+      core-site.xml: |
+        <?xml version="1.0" encoding="UTF-8"?>
+        <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+        <configuration>
+          <property>
+            <name>fs.defaultFS</name>
+            <value>hdfs://aeris/</value>
+          </property>
+    
+          <property>
+            <name>ipc.ping.interval</name>
+            <value>20000</value>
+            <description>The Client sends a ping message to server every
+            period. This is helpful to detect socket connections that were
+            idle and have been terminated by a failed server.
+            </description>
+          </property>
+    
+          <property>
+            <name>ipc.client.connect.max.retries</name>
+            <value>5</value>
+          </property>
+    
+          <property>
+            <name>ipc.client.connect.retry.interval</name>
+            <value>500</value>
+          </property>
+    
+          <property>
+            <name>ipc.client.connect.timeout</name>
+            <value>5000</value>
+          </property>
+    
+          <property>
+            <name>ipc.server.listen.queue.size</name>
+            <value>1000</value>
+          </property>
+    
+          <property>
+            <name>ipc.client.tcpnodelay</name>
+            <value>true</value>
+            <description>Turn on/off Nagle's algorithm for the TCP socket connection on
+            the client. Setting to true disables the algorithm and may decrease latency
+            with a cost of more/smaller packets.
+            </description>
+          </property>
+    
+          <property>
+            <name>fs.trash.interval</name>
+            <value>60</value>
+          </property>
+        </configuration>
+      hadoop-env.sh: |
+        export HADOOP_HOME=/hadoop
+    
+        # Extra Java CLASSPATH elements.  Automatically insert capacity-scheduler and gcs connector.
+        for f in $HADOOP_HOME/contrib/capacity-scheduler/*.jar /gcsconnectorjar/*.jar; do
+          if [ "$HADOOP_CLASSPATH" ]; then
+            export HADOOP_CLASSPATH=$HADOOP_CLASSPATH:$f
+          else
+            export HADOOP_CLASSPATH=$f
+          fi
+        done
+    
+        # Where log files are stored.  $HADOOP_HOME/logs by default.
+        export HADOOP_LOG_DIR=/logs
+        export HADOOP_ROOT_LOGGER=INFO,console
+        GC_OPTS="-verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:$HADOOP_LOG_DIR/hadoop-$HADOOP_IDENT_STRING-$COMMAND-gc.log"
+    
+        # Enable JMX exporter agent
+        if [ -z "$JMX_PORT" ]; then JMX_PORT="7072"; fi
+        JMX_OPTS="-javaagent:/jmxexporterjar/jmx_prometheus_javaagent.jar=$JMX_PORT:$HADOOP_HOME/etc/hadoop/hadoop-jmx-exporter-config.yml"
+    
+        # Extra Java runtime options.  Empty by default.
+        HADOOP_OPTS="$GC_OPTS -Djava.net.preferIPv4Stack=true -Dsun.net.inetaddr.ttl=10"
+    
+        # Command specific options appended to HADOOP_OPTS when specified
+        HADOOP_CLIENT_OPTS="-Xmx256m $HADOOP_CLIENT_OPTS"
+        HDFS_NAMENODE_OPTS="-Xmx512m -Dhadoop.security.logger=${HADOOP_SECURITY_LOGGER:-INFO,RFAS} -Dhdfs.audit.logger=${HDFS_AUDIT_LOGGER:-INFO,NullAppender} $HDFS_NAMENODE_OPTS $JMX_OPTS"
+        HDFS_ZKFC_OPTS="-Xmx128m $HDFS_ZKFC_OPTS $JMX_OPTS"
+        HDFS_JOURNALNODE_OPTS="-Xmx256m $HDFS_JOURNALNODE_OPTS $JMX_OPTS"
+        HDFS_DATANODE_OPTS="-Xmx1G -Dhadoop.security.logger=ERROR,RFAS $HADOOP_DATANODE_OPTS $JMX_OPTS"
+        export HADOOP_MAPRED_HOME=$HADOOP_HOME
+    
+        # A string representing this instance of hadoop. $USER by default.
+        export HADOOP_IDENT_STRING=hadoop
+
+
+      hbase-site.xml: |
+        <?xml version="1.0" encoding="UTF-8"?>
+        <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+        <configuration>
+          <property>
+            <name>hbase.zookeeper.quorum</name>
+            <value>zookeeper-0-zookeeper.zookeeper:2181,zookeeper-1-zookeeper.zookeeper:2181,zookeeper-2-zookeeper.zookeeper:2181</value>
+          </property>
+          <property>
+            <name>hbase.regionserver.handler.count</name>
+            <value>50</value>
+            <description>Count of RPC Server instances spun up on
+            RegionServers Same property is used by the Master for count of
+            master handlers.  Default is 10.
+            </description>
+          </property>
+          <property>
+            <name>hbase.rootdir</name>
+            <value>hdfs://aeris/hbase</value>
+            <description>The directory shared by region servers.</description>
+          </property>
+          <property>
+            <name>hbase.cluster.distributed</name>
+            <value>true</value>
+          </property>
+          <property>
+            <name>hbase.regions.slop</name>
+            <value>0.1</value>
+            <description>
+              Some slop is ok to not spend our time rebalancing
+            </description>
+          </property>
+          <property>
+            <name>hbase.hregion.max.filesize</name>
+            <value>42949672960</value>
+            <description>
+              Our tables are "deep" in terms of versions, rather than "wide" in terms of rows.
+              Also, we only rarelly query historical data for analytics. So splitting based on
+              total HFile size can end up premature with default 10GB. We set it to 40GB to
+              reduce total region count. Note that this increases compaction duration as
+              regions are now larger.
+            </description>
+          </property>
+          <property>
+            <name>hbase.hregion.compacting.memstore.type</name>
+            <value>NONE</value>
+            <description>
+              Don't use compacting memstore as in our case we have very little of
+              deletes/overrides so we mostly experience overhead rather than benefits.
+            </description>
+          </property>
+          <property>
+            <name>hbase.hregion.memstore.flush.size</name>
+            <value>268435456</value>
+            <description>
+              As workload is write heavy, we want larger memstores in order to flush to HFile
+              less often reducing the rate at which they need to be compacted.
+            </description>
+          </property>
+          <property>
+            <name>hbase.regionserver.global.memstore.size</name>
+            <value>0.75</value>
+            <description>
+              Memstore on heap. Our worload is about 5/95 read/writes,
+              so we prioritize memory for writes.
+            </description>
+          </property>
+          <property>
+            <name>hfile.block.cache.size</name>
+            <value>0.05</value>
+            <description>
+              Mostly disable block cache (still cache index and bloom) as our workload is
+              about 5/95 read/writes with block cache hit rate of 50-70%.
+              (TODO increase this once we have bigger VMs).
+            </description>
+          </property>
+          <property>
+            <name>hfile.block.bloom.cacheonwrite</name>
+            <value>true</value>
+            <description>
+              Cache bloom filter on write as we are more likely to request latest data.
+            </description>
+          </property>
+          <property>
+            <name>hbase.block.data.cachecompressed</name>
+            <value>true</value>
+            <description>
+              Cache snappy compressed blocks. Allows to keep more data in cache
+              at the expense of CPU.
+            </description>
+          </property>
+          <property>
+            <name>hbase.block.data.cachecompressed</name>
+            <value>true</value>
+            <description>
+              Cache snappy compressed blocks. Allows to keep more data in cache
+              at the expense of CPU.
+            </description>
+          </property>
+          <property>
+            <name>hbase.lease.recovery.dfs.timeout</name>
+            <value>23000</value>
+            <description>How much time we allow elapse between calls to recover lease.
+            Should be larger than the dfs timeout.</description>
+          </property>
+          <property>
+            <name>zookeeper.session.timeout</name>
+            <value>30000</value>
+          </property>
+        </configuration>
+
+      hbase-env.sh: |
+        export HADOOP_HOME=/hadoop
+        export HBASE_CLASSPATH=/hadoop/etc/hadoop
+        export HBASE_LIBRARY_PATH=/hadoop/lib/native
+        HBASE_OPTS="$HBASE_OPTS -XX:+UseG1GC -XX:MaxGCPauseMillis=50 -XX:+ParallelRefProcEnabled -XX:+PerfDisableSharedMem -XX:-ResizePLAB -XX:-OmitStackTraceInFastThrow -XX:+HeapDumpOnOutOfMemoryError -Djava.net.preferIPv4Stack=true -Dsun.net.inetaddr.ttl=10"
+        export SERVER_GC_OPTS="-verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:/logs/gc.log -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=4 -XX:GCLogFileSize=256M"
+        if [ -z "$JMX_PORT" ]; then JMX_PORT="7072"; fi
+        HBASE_JMX_BASE="-Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.authenticate=false -javaagent:/jmxexporterjar/jmx_prometheus_javaagent.jar=$JMX_PORT:/hbase/conf/hbase-jmx-exporter-config.yml"
+        HBASE_MASTER_OPTS="-Dproc_hmaster -Xmx1536m $HBASE_MASTER_OPTS $HBASE_JMX_BASE -Dcom.sun.management.jmxremote.port=11101"
+        HBASE_REGIONSERVER_OPTS="-Dproc_regionserver -Xmx26g -XX:MaxDirectMemorySize=6g $HBASE_REGIONSERVER_OPTS $HBASE_JMX_BASE -Dcom.sun.management.jmxremote.port=11102"
+        export HBASE_LOG_DIR=/logs
+        mkdir -p "$HBASE_LOG_DIR" && touch "$HBASE_LOG_DIR/write.ok" || {
+          echo >&2 "Warning: can't write to $HBASE_LOG_DIR"
+          # If we can't get our logs directory or write to it, fallback to the
+          # default, which is to use $HBASE_HOME/logs.
+          unset HBASE_LOG_DIR
+        }
+        HBASE_MANAGES_ZK=false
+        HBASE_ROOT_LOGGER=INFO,console
+      log4j.properties: |
+        hbase.root.logger=INFO,console
+        hbase.security.logger=INFO,console
+        hbase.log.dir=.
+        hbase.log.file=hbase.log
+        hbase.log.level=INFO
+        # Define the root logger to the system property "hbase.root.logger".
+        log4j.rootLogger=${hbase.root.logger}
+        # Logging Threshold
+        log4j.threshold=ALL
+        hbase.log.maxfilesize=256MB
+        hbase.log.maxbackupindex=20
+        log4j.appender.NullAppender=org.apache.log4j.varia.NullAppender
+        log4j.appender.console=org.apache.log4j.ConsoleAppender
+        log4j.appender.console.target=System.err
+        log4j.appender.console.layout=org.apache.log4j.PatternLayout
+        log4j.appender.console.layout.ConversionPattern=%d{ISO8601} %-5p [%t] %c{2}: %.1000m%n
+        # Custom Logging levels
+        log4j.logger.org.apache.zookeeper=${hbase.log.level}
+        # silence SASL logs that are printed every time a connection to datanodes is made
+        log4j.logger.org.apache.hadoop.hdfs.protocol.datatransfer.sasl=WARN
+        # silence Codec pool
+        log4j.logger.org.apache.hadoop.io.compress.CodecPool=WARN
+        log4j.logger.org.apache.hadoop.hbase=${hbase.log.level}
+        log4j.logger.org.apache.hadoop.hbase.META=${hbase.log.level}
+        # Make these two classes INFO-level. Make them DEBUG to see more zk debug.
+        log4j.logger.org.apache.hadoop.hbase.zookeeper.ZKUtil=${hbase.log.level}
+        log4j.logger.org.apache.hadoop.hbase.zookeeper.ZKWatcher=${hbase.log.level}
+        # Prevent metrics subsystem start/stop messages (HBASE-17722)
+        log4j.logger.org.apache.hadoop.metrics2.impl.MetricsConfig=WARN
+        log4j.logger.org.apache.hadoop.metrics2.impl.MetricsSinkAdapter=WARN
+        log4j.logger.org.apache.hadoop.metrics2.impl.MetricsSystemImpl=WARN
+        # Disable request log by default, you can enable this by changing the appender
+        log4j.category.http.requests=INFO,NullAppender
+        log4j.additivity.http.requests=false
+      hbase-jmx-exporter-config.yml: |
+        lowercaseOutputLabelNames: true
+        lowercaseOutputName: true
+        rules:
+          - pattern: Hadoop<service=HBase, name=RegionServer, sub=Regions><>Namespace_([^\W_]+)_table_([^\W]+)_region_([^\W_]+)_metric_(\w+)
+            name: hbase_$4
+            labels:
+              namespace: "$1"
+              table: "$2"
+              region: "$3"
+          - pattern: Hadoop<service=HBase, name=(\w+), sub=(\w+)><>([\w.-]+)
+            name: hbase_$1_$2_$3
+  masterSpec:
+    count: 2
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: aeris
+        app: hbase
+        hbase: master
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "7072"
+    podSpec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: hbase
+                operator: In
+                values:
+                - master
+            namespaces:
+            - hbase
+            topologyKey: kubernetes.io/hostname
+      tolerations:
+      - key: "type"
+        operator: "Equal"
+        value: "critical"
+        effect: "NoSchedule"
+      nodeSelector:
+        node-role/critical: critical
+      serviceAccountName: hbase
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      priorityClassName: critical-priority
+      initContainers:
+      - name: installjmxexporter
+        image: gcr.io/cv-play-aeris/aristanetworks/jmx-exporter:0.12.0-2
+        command:
+        - cp
+        - /jmx_prometheus_javaagent.jar
+        - /jmxexporterjar/jmx_prometheus_javaagent.jar
+        volumeMounts:
+        - name: jmxexporterjar
+          mountPath: /jmxexporterjar
+      containers:
+      - name: server
+        image: gcr.io/cv-play-aeris/docker.corp.arista.io/aeris-k8s-hbase:2.2.5-3.1.3-2
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            cpu: "2"
+            memory: 2Gi
+          limits:
+            cpu: "2"
+            memory: 2Gi
+        args: ["hbase", "master", "start"]
+        env:
+        - name: HBASE_LOGFILE
+          value: "master.log"
+        ports:
+        - containerPort: 16000
+          name: ipc
+        - containerPort: 16010
+          name: ui
+        - containerPort: 7072
+          name: metrics
+        volumeMounts:
+        - name: config
+          mountPath: /hbase/conf
+        - name: config
+          mountPath: /hadoop/etc/hadoop/hdfs-site.xml
+          subPath: hdfs-site.xml
+        - name: config
+          mountPath: /hadoop/etc/hadoop/core-site.xml
+          subPath: core-site.xml
+        - name: config
+          mountPath: /hadoop/etc/hadoop/hadoop-env.sh
+          subPath: hadoop-env.sh
+        - name: config
+          mountPath: /hadoop/etc/hadoop/hadoop-jmx-exporter-config.yml
+          subPath: hadoop-jmx-exporter-config.yml
+        - name: logs
+          mountPath: /logs
+        - name: jmxexporterjar
+          mountPath: /jmxexporterjar
+          readOnly: true
+      volumes:
+      - name: logs
+        emptyDir: {}
+      - name: jmxexporterjar
+        emptyDir: {}
+      - name: metrics
+        emptyDir: {}
+      terminationGracePeriodSeconds: 60
+  regionServerSpec:
+    count: 3
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: aeris
+        app: hbase
+        hbase: regionserver
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "7072"
+    podSpec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: hbase
+                operator: In
+                values:
+                - regionserver
+            namespaces:
+            - hbase
+            topologyKey: kubernetes.io/hostname
+      tolerations:
+      - key: "type"
+        operator: "Equal"
+        value: "aeris"
+        effect: "NoSchedule"
+      nodeSelector:
+        node-role/aeris: aeris
+      serviceAccountName: hbase
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      priorityClassName: critical-priority
+      initContainers:
+      - name: installjmxexporter
+        image: gcr.io/cv-play-aeris/aristanetworks/jmx-exporter:0.12.0-2
+        command:
+        - cp
+        - /jmx_prometheus_javaagent.jar
+        - /jmxexporterjar/jmx_prometheus_javaagent.jar
+        volumeMounts:
+        - name: jmxexporterjar
+          mountPath: /jmxexporterjar
+      containers:
+      - name: server
+        image: gcr.io/cv-play-aeris/docker.corp.arista.io/aeris-k8s-hbase:2.2.5-3.1.3-2
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            cpu: 8
+            memory: 32Gi
+          limits:
+            cpu: 8
+            memory: 32Gi
+        args:
+        - "hbase"
+        - "regionserver"
+        - "-Dhbase.regionserver.hostname=$(PODNAME).hbase.hbase.svc.cluster.local"
+        - "start"
+        env:
+        - name: HBASE_LOGFILE
+          value: "regionserver.log"
+        - name: PODNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        ports:
+        - containerPort: 16020
+          name: ipc
+        - containerPort: 16030
+          name: ui
+        - containerPort: 7072
+          name: metrics
+        livenessProbe:
+          httpGet:
+            path: /rs-status
+            port: ui
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+        # TODO: switch to startupProbe once upgraded to 1.16+
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - hbase zkcli stat "/hbase/rs/$(wget -qO - localhost:16030/dump|awk '/RegionServer status for/ {print $4}')" 2>&1|grep -q ephemeralOwner
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 10
+        volumeMounts:
+        - name: config
+          mountPath: /hbase/conf
+        - name: config
+          mountPath: /hadoop/etc/hadoop/hdfs-site.xml
+          subPath: hdfs-site.xml
+        - name: config
+          mountPath: /hadoop/etc/hadoop/core-site.xml
+          subPath: core-site.xml
+        - name: config
+          mountPath: /hadoop/etc/hadoop/hadoop-env.sh
+          subPath: hadoop-env.sh
+        - name: config
+          mountPath: /hadoop/etc/hadoop/hadoop-jmx-exporter-config.yml
+          subPath: hadoop-jmx-exporter-config.yml
+        - name: logs
+          mountPath: /logs
+        - name: jmxexporterjar
+          mountPath: /jmxexporterjar
+          readOnly: true
+      volumes:
+      - name: logs
+        emptyDir: {}
+      - name: jmxexporterjar
+        emptyDir: {}
+      terminationGracePeriodSeconds: 60
