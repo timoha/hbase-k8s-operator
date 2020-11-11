@@ -1,5 +1,9 @@
-name: test HBase operator
-on: [push]
+name: test HBase kubernetes operator
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 jobs:
   test:
     runs-on: ubuntu-latest
