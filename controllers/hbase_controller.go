@@ -502,7 +502,6 @@ func (r *HBaseReconciler) ensureStatefulSet(hb *hbasev1.HBase,
 			if err = controllerutil.SetControllerReference(hb, expected, r.Scheme); err != nil {
 				return nil, false, err
 			}
-			r.Log.Info("StatefulSet", "spec", expected)
 			if err = r.Create(context.TODO(), expected); err != nil {
 				return nil, false, err
 			}
