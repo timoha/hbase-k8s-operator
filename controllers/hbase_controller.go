@@ -418,7 +418,7 @@ func (r *HBaseReconciler) ensureStatefulSetPods(ctx context.Context, sts *appsv1
 	podList := &corev1.PodList{}
 	listOpts := []client.ListOption{
 		client.InNamespace(sts.Namespace),
-		client.MatchingLabels(sts.Spec.Template.Labels),
+		client.MatchingLabels{HBaseControllerNameKey: sts.Spec.Template.Labels[HBaseControllerNameKey]},
 	}
 	if err := r.List(context.TODO(), podList, listOpts...); err != nil {
 		return false, err
@@ -496,7 +496,7 @@ func (r *HBaseReconciler) ensureStatefulSetPods(ctx context.Context, sts *appsv1
 func (r *HBaseReconciler) ensureStatefulSet(hb *hbasev1.HBase,
 	stsName, cmName types.NamespacedName, ss hbasev1.ServerSpec) (*appsv1.StatefulSet, bool, error) {
 	actual := &appsv1.StatefulSet{}
-	expected, expectedRevision := r.statefulSet(stsName, cmName, ss)
+	expected, expectedRevision := r.statefulSet(hb, stsName, cmName, ss)
 	if err := r.Get(context.TODO(), stsName, actual); err != nil {
 		if errors.IsNotFound(err) {
 			if err = controllerutil.SetControllerReference(hb, expected, r.Scheme); err != nil {
@@ -540,17 +540,26 @@ func configMapVolume(cmName types.NamespacedName) corev1.Volume {
 	}
 }
 
-func cloneMap(orig map[string]string) map[string]string {
-	out := make(map[string]string, len(orig))
-	for k, v := range orig {
-		out[k] = v
+// cloneMap clones a map and applies patches without overwrites
+func cloneMap(ms ...map[string]string) map[string]string {
+	a := map[string]string{}
+	for _, p := range ms {
+		for k, v := range p {
+			if _, ok := a[k]; ok {
+				continue
+			}
+			a[k] = v
+		}
 	}
-	return out
+	return a
 }
 
-const HBaseControllerRevisionKey = "hbase-controller-revision"
+const (
+	HBaseControllerNameKey     = "hbase-controller-name"
+	HBaseControllerRevisionKey = "hbase-controller-revision"
+)
 
-func (r *HBaseReconciler) statefulSet(
+func (r *HBaseReconciler) statefulSet(hb *hbasev1.HBase,
 	stsName, cmName types.NamespacedName, ss hbasev1.ServerSpec) (*appsv1.StatefulSet, string) {
 	spec := (&ss.PodSpec).DeepCopy()
 	spec.Volumes = append(spec.Volumes, configMapVolume(cmName))
@@ -568,8 +577,10 @@ func (r *HBaseReconciler) statefulSet(
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels:      cloneMap(ss.Metadata.Labels),
-				Annotations: cloneMap(ss.Metadata.Annotations),
+				Labels: cloneMap(ss.Metadata.Labels, hb.Labels, map[string]string{
+					HBaseControllerNameKey: stsName.Name,
+				}),
+				Annotations: cloneMap(ss.Metadata.Annotations, hb.Annotations),
 			},
 			Spec: *spec,
 		},
@@ -581,9 +592,9 @@ func (r *HBaseReconciler) statefulSet(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      stsName.Name,
 			Namespace: stsName.Namespace,
-			Annotations: map[string]string{
-				HBaseControllerRevisionKey: rev,
-			},
+			Annotations: cloneMap(
+				map[string]string{HBaseControllerRevisionKey: rev}, hb.Annotations),
+			Labels: cloneMap(hb.Labels),
 		},
 		Spec: stsSpec,
 	}, rev
@@ -605,14 +616,14 @@ var configMapLabels = map[string]string{
 
 func (r *HBaseReconciler) configMap(hb *hbasev1.HBase,
 	name types.NamespacedName) (*corev1.ConfigMap, error) {
-	immutable := true
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name.Name,
-			Namespace: name.Namespace,
-			Labels:    configMapLabels,
+			Name:        name.Name,
+			Namespace:   name.Namespace,
+			Labels:      cloneMap(configMapLabels, hb.Labels),
+			Annotations: cloneMap(hb.Annotations),
 		},
-		Immutable: &immutable,
+		Immutable: pointer.BoolPtr(true),
 		Data:      hb.Spec.Config.Data,
 	}
 	if err := controllerutil.SetControllerReference(hb, cm, r.Scheme); err != nil {
@@ -624,8 +635,10 @@ func (r *HBaseReconciler) configMap(hb *hbasev1.HBase,
 func (r *HBaseReconciler) headlessService(hb *hbasev1.HBase) *corev1.Service {
 	srv := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      headlessServiceName,
-			Namespace: hb.Namespace,
+			Name:        headlessServiceName,
+			Namespace:   hb.Namespace,
+			Labels:      cloneMap(hb.Labels),
+			Annotations: cloneMap(hb.Annotations),
 		},
 		Spec: corev1.ServiceSpec{
 			Type:      corev1.ServiceTypeClusterIP,
