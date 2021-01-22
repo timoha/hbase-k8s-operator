@@ -270,7 +270,7 @@ func (r *HBaseReconciler) getRegionsPerRegionServer(ctx context.Context) (map[st
 	// scan meta to get a regioninfo and server name
 	scan, err := hrpc.NewScan(ctx,
 		[]byte("hbase:meta"),
-		hrpc.Families(map[string][]string{"info": []string{"sn"}}))
+		hrpc.Families(map[string][]string{"info": []string{"sn", "state"}}))
 	if err != nil {
 		return nil, err
 	}
@@ -286,16 +286,24 @@ func (r *HBaseReconciler) getRegionsPerRegionServer(ctx context.Context) (map[st
 			return nil, err
 		}
 
-		if l := len(res.Cells); l != 1 {
+		if l := len(res.Cells); l != 2 {
 			return nil, fmt.Errorf("got %v cells", l)
 		}
 
-		// get region name from row and server name from value
+		if state := string(res.Cells[1].Value); state != "OPEN" {
+			// skip the region if it's not OPEN as master won't be able to move it
+			// TODO: consider letting regionservers finish dealing with the region
+			// in case it's being split/merged/opened
+			continue
+		}
+
+		// get region name from row and server name from value ("sn" column)
 		// TODO: parse actual regioninfo value
 		cell := res.Cells[0]
 		result[string(cell.Value)] = append(
 			result[string(cell.Value)],
 			cell.Row[len(cell.Row)-33:len(cell.Row)-1])
+
 	}
 	return result, nil
 }
