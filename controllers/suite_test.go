@@ -52,7 +52,6 @@ import (
 var cfg *rest.Config
 var k8sClient client.Client
 var testEnv *envtest.Environment
-var ghClient *mock.MockClient
 var ghAdmin *mock.MockAdminClient
 
 func TestAPIs(t *testing.T) {
@@ -125,7 +124,6 @@ var _ = BeforeSuite(func(done Done) {
 	logf.SetLogger(zap.LoggerTo(GinkgoWriter, true))
 	gomockCtrl := gomock.NewController(GinkgoT())
 	defer gomockCtrl.Finish()
-	ghClient = mock.NewMockClient(gomockCtrl)
 	ghAdmin = mock.NewMockAdminClient(gomockCtrl)
 	ghAdmin.EXPECT().ClusterStatus().AnyTimes().Return(&pb.ClusterStatus{}, nil)
 	ghAdmin.EXPECT().SetBalancer(gomock.Any()).AnyTimes()
@@ -152,11 +150,10 @@ var _ = BeforeSuite(func(done Done) {
 	Expect(err).ToNot(HaveOccurred())
 
 	err = (&HBaseReconciler{
-		Client:   k8sManager.GetClient(),
-		Log:      ctrl.Log.WithName("controllers").WithName("HBase"),
-		Scheme:   k8sManager.GetScheme(),
-		GhClient: ghClient,
-		GhAdmin:  ghAdmin,
+		Client:  k8sManager.GetClient(),
+		Log:     ctrl.Log.WithName("controllers").WithName("HBase"),
+		Scheme:  k8sManager.GetScheme(),
+		GhAdmin: ghAdmin,
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
