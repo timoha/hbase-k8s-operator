@@ -70,11 +70,10 @@ func main() {
 	}
 
 	if err = (&controllers.HBaseReconciler{
-		Client:   mgr.GetClient(),
-		Log:      ctrl.Log.WithName("controllers").WithName("HBase"),
-		Scheme:   mgr.GetScheme(),
-		GhClient: gohbase.NewClient(zkQuorum),
-		GhAdmin:  gohbase.NewAdminClient(zkQuorum),
+		Client:  mgr.GetClient(),
+		Log:     ctrl.Log.WithName("controllers").WithName("HBase"),
+		Scheme:  mgr.GetScheme(),
+		GhAdmin: gohbase.NewAdminClient(zkQuorum),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "HBase")
 		os.Exit(1)
