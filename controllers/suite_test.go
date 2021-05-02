@@ -172,7 +172,7 @@ var _ = BeforeSuite(func(done Done) {
 var _ = Describe("HBase controller", func() {
 	var (
 		timeout   = time.Second * 10
-		interval  = time.Millisecond * 250
+		interval  = time.Second * 1
 		namespace = "default"
 		ctx       = context.Background()
 	)
@@ -215,17 +215,17 @@ var _ = Describe("HBase controller", func() {
 			}, timeout, interval).Should(Equal(1))
 
 			By("By checking HBase deployed master statefulset")
-			createMasterStatefulSet := &appsv1.StatefulSet{}
+			existingMasterStatefulSet := &appsv1.StatefulSet{}
 			Eventually(func() error {
 				masterName := types.NamespacedName{Name: "hbasemaster", Namespace: namespace}
-				return k8sClient.Get(ctx, masterName, createMasterStatefulSet)
+				return k8sClient.Get(ctx, masterName, existingMasterStatefulSet)
 			}, timeout, interval).Should(Succeed())
 
 			By("By checking master statefulset has correct number of replicas")
 			Ω(hb.Spec.MasterSpec.Count).Should(Equal(int32(2)))
 
 			By("By checking master statefulset has mounted correct confgmap")
-			vs := createMasterStatefulSet.Spec.Template.Spec.Volumes
+			vs := existingMasterStatefulSet.Spec.Template.Spec.Volumes
 			Ω(len(vs)).Should(Equal(1))
 
 			Ω(vs[0]).Should(Equal(corev1.Volume{
@@ -241,7 +241,7 @@ var _ = Describe("HBase controller", func() {
 			}))
 
 			By("By checking HBase deployed master statefulset has annotation")
-			_, ok := createMasterStatefulSet.Annotations["hbase-controller-revision"]
+			_, ok := existingMasterStatefulSet.Annotations["hbase-controller-revision"]
 			Ω(ok).Should(BeTrue())
 
 			By("By checking HBase deployed regionserver statefulset")
@@ -276,8 +276,9 @@ var _ = Describe("HBase controller", func() {
 		})
 	})
 
+	// TODO This test needs major refactoring
 	Context("When updating config of HBase CRD", func() {
-		It("Should redeploy all resources", func() {
+		It("Should redeploy or update resources", func() {
 			By("By updating HBase")
 
 			hbaseLookupKey := types.NamespacedName{Name: "hbase", Namespace: namespace}
@@ -286,6 +287,7 @@ var _ = Describe("HBase controller", func() {
 				return k8sClient.Get(ctx, hbaseLookupKey, hb)
 			}, timeout, interval).Should(Succeed())
 
+			// --------------------------- TEST 1 ---------------------------
 			// get old configmap
 			var existingCms []corev1.ConfigMap
 			Eventually(func() (int, error) {
@@ -306,25 +308,27 @@ var _ = Describe("HBase controller", func() {
 			}, timeout, interval).Should(Equal(1))
 
 			// get old master sts
-			createMasterStatefulSet := &appsv1.StatefulSet{}
+			existingMasterStatefulSet := &appsv1.StatefulSet{}
 			Eventually(func() error {
 				masterName := types.NamespacedName{Name: "hbasemaster", Namespace: namespace}
-				return k8sClient.Get(ctx, masterName, createMasterStatefulSet)
+				return k8sClient.Get(ctx, masterName, existingMasterStatefulSet)
 			}, timeout, interval).Should(Succeed())
-			oldMasterAnnotation := createMasterStatefulSet.Annotations["hbase-controller-revision"]
+			oldMasterAnnotation := existingMasterStatefulSet.Annotations["hbase-controller-revision"]
 
 			// get old rs sts
-			createRsStatefulSet := &appsv1.StatefulSet{}
+			existingRsStatefulSet := &appsv1.StatefulSet{}
 			Eventually(func() error {
 				rsName := types.NamespacedName{Name: "regionserver", Namespace: namespace}
-				return k8sClient.Get(ctx, rsName, createRsStatefulSet)
+				return k8sClient.Get(ctx, rsName, existingRsStatefulSet)
 			}, timeout, interval).Should(Succeed())
-			oldRsAnnotation := createRsStatefulSet.Annotations["hbase-controller-revision"]
+			oldRsAnnotation := existingRsStatefulSet.Annotations["hbase-controller-revision"]
 
+			// Different cm than initial spec, but preserve replica counts as initial spec
+			// to test for revision SHA change
 			newHB := makeHBaseSpec(map[string]string{"hbase-site.xml": "conf2"})
 			hb.Spec.Config = newHB.Spec.Config
-			hb.Spec.MasterSpec.Count = 1
-			hb.Spec.RegionServerSpec.Count = 4
+			hb.Spec.MasterSpec.Count = 2
+			hb.Spec.RegionServerSpec.Count = 3
 			Expect(k8sClient.Update(ctx, hb)).Should(Succeed())
 
 			oldConfigMaps := existingCms
@@ -341,37 +345,249 @@ var _ = Describe("HBase controller", func() {
 				return configMapList.Items, nil
 			}, timeout, interval).ShouldNot(Equal(oldConfigMaps))
 
-			By("By checking HBase updated master statefulset")
+			By("By checking HBase updated master statefulset revision")
 			Eventually(func() (string, error) {
 				masterName := types.NamespacedName{Name: "hbasemaster", Namespace: namespace}
-				if err := k8sClient.Get(ctx, masterName, createMasterStatefulSet); err != nil {
+				if err := k8sClient.Get(ctx, masterName, existingMasterStatefulSet); err != nil {
 					return oldMasterAnnotation, err
 				}
-				masterAnnotation, ok := createMasterStatefulSet.Annotations["hbase-controller-revision"]
+				masterAnnotation, ok := existingMasterStatefulSet.Annotations["hbase-controller-revision"]
 				if !ok {
 					return oldMasterAnnotation, errors.New("no annotation")
 				}
 				return masterAnnotation, nil
 			}, timeout, interval).ShouldNot(Equal(oldMasterAnnotation))
 
-			By("By checking master statefulset has updated replicas")
-			Ω(int(*createMasterStatefulSet.Spec.Replicas)).Should(Equal(1))
+			By("By checking master statefulset has not updated replicas")
+			Eventually(func() (int, error) {
+				rsName := types.NamespacedName{Name: "hbasemaster", Namespace: namespace}
+				if err := k8sClient.Get(ctx, rsName, existingMasterStatefulSet); err != nil {
+					return 0, err
+				}
+				return int(*existingMasterStatefulSet.Spec.Replicas), nil
+			}, timeout, interval).Should(Equal(2))
 
-			By("By checking HBase updated regionserver statefulset")
+			By("By checking HBase updated regionserver sts revision annotation")
 			Eventually(func() (string, error) {
 				rsName := types.NamespacedName{Name: "regionserver", Namespace: namespace}
-				if err := k8sClient.Get(ctx, rsName, createRsStatefulSet); err != nil {
+				if err := k8sClient.Get(ctx, rsName, existingRsStatefulSet); err != nil {
 					return oldRsAnnotation, err
 				}
-				rsAnnotation, ok := createMasterStatefulSet.Annotations["hbase-controller-revision"]
+				rsAnnotation, ok := existingRsStatefulSet.Annotations["hbase-controller-revision"]
 				if !ok {
 					return oldRsAnnotation, errors.New("no annotation")
 				}
 				return rsAnnotation, nil
 			}, timeout, interval).ShouldNot(Equal(oldRsAnnotation))
 
-			By("By checking master statefulset has updated replicas")
-			Ω(int(*createRsStatefulSet.Spec.Replicas)).Should(Equal(4))
+			By("By checking regionserver statefulset has not updated replicas")
+			Eventually(func() (int, error) {
+				rsName := types.NamespacedName{Name: "regionserver", Namespace: namespace}
+				if err := k8sClient.Get(ctx, rsName, existingRsStatefulSet); err != nil {
+					return 0, err
+				}
+				return int(*existingRsStatefulSet.Spec.Replicas), nil
+			}, timeout, interval).Should(Equal(3))
+
+			// --------------------------- TEST 2 ---------------------------
+			// get old configmap
+			Eventually(func() (int, error) {
+				configMapList := &corev1.ConfigMapList{}
+				listOpts := []client.ListOption{
+					client.InNamespace(namespace),
+					client.MatchingLabels(map[string]string{"config": "core"}),
+				}
+				if err := k8sClient.List(ctx, configMapList, listOpts...); err != nil {
+					return 0, err
+				}
+				l := len(configMapList.Items)
+				if l != 1 {
+					return l, nil
+				}
+				existingCms = configMapList.Items
+				return l, nil
+			}, timeout, interval).Should(Equal(1))
+
+			// get old master sts
+			existingMasterStatefulSet = &appsv1.StatefulSet{}
+			Eventually(func() error {
+				masterName := types.NamespacedName{Name: "hbasemaster", Namespace: namespace}
+				return k8sClient.Get(ctx, masterName, existingMasterStatefulSet)
+			}, timeout, interval).Should(Succeed())
+			oldMasterAnnotation = existingMasterStatefulSet.Annotations["hbase-controller-revision"]
+
+			// get old rs sts
+			existingRsStatefulSet = &appsv1.StatefulSet{}
+			Eventually(func() error {
+				rsName := types.NamespacedName{Name: "regionserver", Namespace: namespace}
+				return k8sClient.Get(ctx, rsName, existingRsStatefulSet)
+			}, timeout, interval).Should(Succeed())
+			oldRsAnnotation = existingRsStatefulSet.Annotations["hbase-controller-revision"]
+
+			// No cm updated (or other conf) so SHA should remain the same.
+			// Update counts to get new replica counts
+			hb.Spec.MasterSpec.Count = 1
+			hb.Spec.RegionServerSpec.Count = 5
+			Expect(k8sClient.Update(ctx, hb)).Should(Succeed())
+
+			oldConfigMaps = existingCms
+			By("By checking HBase configmap was not updated")
+			Eventually(func() ([]corev1.ConfigMap, error) {
+				configMapList := &corev1.ConfigMapList{}
+				listOpts := []client.ListOption{
+					client.InNamespace(namespace),
+					client.MatchingLabels(map[string]string{"config": "core"}),
+				}
+				if err := k8sClient.List(ctx, configMapList, listOpts...); err != nil {
+					return nil, err
+				}
+				return configMapList.Items, nil
+			}, timeout, interval).Should(Equal(oldConfigMaps))
+
+			By("By checking HBase master sts revision was not updated")
+			Eventually(func() (string, error) {
+				masterName := types.NamespacedName{Name: "hbasemaster", Namespace: namespace}
+				if err := k8sClient.Get(ctx, masterName, existingMasterStatefulSet); err != nil {
+					return oldMasterAnnotation, err
+				}
+				masterAnnotation, ok := existingMasterStatefulSet.Annotations["hbase-controller-revision"]
+				if !ok {
+					return oldMasterAnnotation, errors.New("no annotation")
+				}
+				return masterAnnotation, nil
+			}, timeout, interval).Should(Equal(oldMasterAnnotation))
+
+			By("By checking HBase master statefulset updated replicas")
+			Eventually(func() (int, error) {
+				rsName := types.NamespacedName{Name: "hbasemaster", Namespace: namespace}
+				if err := k8sClient.Get(ctx, rsName, existingMasterStatefulSet); err != nil {
+					return 0, err
+				}
+				return int(*existingMasterStatefulSet.Spec.Replicas), nil
+			}, timeout, interval).Should(Equal(1))
+
+			By("By checking HBase regionserver sts revision was not updated")
+			Eventually(func() (string, error) {
+				rsName := types.NamespacedName{Name: "regionserver", Namespace: namespace}
+				if err := k8sClient.Get(ctx, rsName, existingRsStatefulSet); err != nil {
+					return oldRsAnnotation, err
+				}
+				rsAnnotation, ok := existingRsStatefulSet.Annotations["hbase-controller-revision"]
+				if !ok {
+					return oldRsAnnotation, errors.New("no annotation")
+				}
+				return rsAnnotation, nil
+			}, timeout, interval).Should(Equal(oldRsAnnotation))
+
+			By("By checking HBase regionserver sts updated replicas")
+			Eventually(func() (int, error) {
+				rsName := types.NamespacedName{Name: "regionserver", Namespace: namespace}
+				if err := k8sClient.Get(ctx, rsName, existingRsStatefulSet); err != nil {
+					return 0, err
+				}
+				return int(*existingRsStatefulSet.Spec.Replicas), nil
+			}, timeout, interval).Should(Equal(5))
+
+			// --------------------------- TEST 3 ---------------------------
+			// get old configmap
+			Eventually(func() (int, error) {
+				configMapList := &corev1.ConfigMapList{}
+				listOpts := []client.ListOption{
+					client.InNamespace(namespace),
+					client.MatchingLabels(map[string]string{"config": "core"}),
+				}
+				if err := k8sClient.List(ctx, configMapList, listOpts...); err != nil {
+					return 0, err
+				}
+				l := len(configMapList.Items)
+				if l != 1 {
+					return l, nil
+				}
+				existingCms = configMapList.Items
+				return l, nil
+			}, timeout, interval).Should(Equal(1))
+
+			// get old master sts
+			existingMasterStatefulSet = &appsv1.StatefulSet{}
+			Eventually(func() error {
+				masterName := types.NamespacedName{Name: "hbasemaster", Namespace: namespace}
+				return k8sClient.Get(ctx, masterName, existingMasterStatefulSet)
+			}, timeout, interval).Should(Succeed())
+			oldMasterAnnotation = existingMasterStatefulSet.Annotations["hbase-controller-revision"]
+
+			// get old rs sts
+			existingRsStatefulSet = &appsv1.StatefulSet{}
+			Eventually(func() error {
+				rsName := types.NamespacedName{Name: "regionserver", Namespace: namespace}
+				return k8sClient.Get(ctx, rsName, existingRsStatefulSet)
+			}, timeout, interval).Should(Succeed())
+			oldRsAnnotation = existingRsStatefulSet.Annotations["hbase-controller-revision"]
+
+			// Update configmap and replica counts
+			newHB = makeHBaseSpec(map[string]string{"hbase-site.xml": "conf3"})
+			hb.Spec.Config = newHB.Spec.Config
+			hb.Spec.MasterSpec.Count = 2
+			hb.Spec.RegionServerSpec.Count = 3
+			Expect(k8sClient.Update(ctx, hb)).Should(Succeed())
+
+			oldConfigMaps = existingCms
+			By("By checking HBase configmap is updated")
+			Eventually(func() ([]corev1.ConfigMap, error) {
+				configMapList := &corev1.ConfigMapList{}
+				listOpts := []client.ListOption{
+					client.InNamespace(namespace),
+					client.MatchingLabels(map[string]string{"config": "core"}),
+				}
+				if err := k8sClient.List(ctx, configMapList, listOpts...); err != nil {
+					return nil, err
+				}
+				return configMapList.Items, nil
+			}, timeout, interval).ShouldNot(Equal(oldConfigMaps))
+
+			By("By checking HBase master sts revision was updated")
+			Eventually(func() (string, error) {
+				masterName := types.NamespacedName{Name: "hbasemaster", Namespace: namespace}
+				if err := k8sClient.Get(ctx, masterName, existingMasterStatefulSet); err != nil {
+					return oldMasterAnnotation, err
+				}
+				masterAnnotation, ok := existingMasterStatefulSet.Annotations["hbase-controller-revision"]
+				if !ok {
+					return oldMasterAnnotation, errors.New("no annotation")
+				}
+				return masterAnnotation, nil
+			}, timeout, interval).ShouldNot(Equal(oldMasterAnnotation))
+
+			By("By checking HBase master statefulset updated replicas")
+			Eventually(func() (int, error) {
+				rsName := types.NamespacedName{Name: "hbasemaster", Namespace: namespace}
+				if err := k8sClient.Get(ctx, rsName, existingMasterStatefulSet); err != nil {
+					return 0, err
+				}
+				return int(*existingMasterStatefulSet.Spec.Replicas), nil
+			}, timeout, interval).Should(Equal(2))
+
+			By("By checking HBase regionserver sts revision was updated")
+			Eventually(func() (string, error) {
+				rsName := types.NamespacedName{Name: "regionserver", Namespace: namespace}
+				if err := k8sClient.Get(ctx, rsName, existingRsStatefulSet); err != nil {
+					return oldRsAnnotation, err
+				}
+				rsAnnotation, ok := existingRsStatefulSet.Annotations["hbase-controller-revision"]
+				if !ok {
+					return oldRsAnnotation, errors.New("no annotation")
+				}
+				return rsAnnotation, nil
+			}, timeout, interval).ShouldNot(Equal(oldRsAnnotation))
+
+			By("By checking HBase regionserver sts updated replicas")
+			Eventually(func() (int, error) {
+				rsName := types.NamespacedName{Name: "regionserver", Namespace: namespace}
+				if err := k8sClient.Get(ctx, rsName, existingRsStatefulSet); err != nil {
+					return 0, err
+				}
+				return int(*existingRsStatefulSet.Spec.Replicas), nil
+			}, timeout, interval).Should(Equal(3))
+
 		})
 	})
 })

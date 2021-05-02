@@ -1,6 +1,4 @@
 /*
-
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -564,9 +562,10 @@ func (r *HBaseReconciler) ensureStatefulSetPods(ctx context.Context, sts *appsv1
 func (r *HBaseReconciler) ensureStatefulSet(hb *hbasev1.HBase,
 	stsName, cmName types.NamespacedName, ss hbasev1.ServerSpec) (*appsv1.StatefulSet, bool, error) {
 	actual := &appsv1.StatefulSet{}
-	expected, expectedRevision := r.statefulSet(hb, stsName, cmName, ss)
 	if err := r.Get(context.TODO(), stsName, actual); err != nil {
 		if errors.IsNotFound(err) {
+			expected, _ := r.statefulSet(hb, stsName, cmName, ss, 0)
+
 			if err = controllerutil.SetControllerReference(hb, expected, r.Scheme); err != nil {
 				return nil, false, err
 			}
@@ -578,8 +577,14 @@ func (r *HBaseReconciler) ensureStatefulSet(hb *hbasev1.HBase,
 		}
 		return nil, false, err
 	}
+	expected, expectedRevision := r.statefulSet(hb, stsName, cmName, ss, *actual.Spec.Replicas)
 
-	if actual.Annotations != nil && actual.Annotations[HBaseControllerRevisionKey] == expectedRevision {
+	r.Log.Info("updating revision", "sameRevision", expectedRevision != actual.Annotations[HBaseControllerRevisionKey])
+	r.Log.Info("updating replica count", "sameReplicaCount", *actual.Spec.Replicas != *expected.Spec.Replicas)
+
+	if actual.Annotations != nil &&
+		actual.Annotations[HBaseControllerRevisionKey] == expectedRevision &&
+		*actual.Spec.Replicas == *expected.Spec.Replicas {
 		r.Log.Info("StatefulSet is up-to-date", "name", stsName)
 		return actual, false, nil
 	}
@@ -628,11 +633,14 @@ const (
 )
 
 func (r *HBaseReconciler) statefulSet(hb *hbasev1.HBase,
-	stsName, cmName types.NamespacedName, ss hbasev1.ServerSpec) (*appsv1.StatefulSet, string) {
+	stsName, cmName types.NamespacedName, ss hbasev1.ServerSpec, rc int32) (*appsv1.StatefulSet, string) {
 	spec := (&ss.PodSpec).DeepCopy()
 	spec.Volumes = append(spec.Volumes, configMapVolume(cmName))
 	stsSpec := appsv1.StatefulSetSpec{
-		Replicas:            pointer.Int32Ptr(ss.Count),
+		// We don't want to use replica value as part of revision change (since
+		// scaling a statefulset is not the same as a new revision) so we just
+		// set current count for now just for hash calculation.
+		Replicas:            pointer.Int32Ptr(rc),
 		PodManagementPolicy: appsv1.ParallelPodManagement,
 		// OnDelete because we managed the pod restarts ourselves
 		UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
@@ -653,9 +661,14 @@ func (r *HBaseReconciler) statefulSet(hb *hbasev1.HBase,
 			Spec: *spec,
 		},
 	}
+
 	h := sha256.New()
 	DeepHashObject(h, &stsSpec)
 	rev := fmt.Sprintf("%x", h.Sum(nil))
+
+	// After revision hash calculation, actually update replica count
+	stsSpec.Replicas = pointer.Int32Ptr(ss.Count)
+
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      stsName.Name,
