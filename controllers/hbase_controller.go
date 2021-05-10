@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"hash"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -476,6 +477,18 @@ func sprintPodList(l []*corev1.Pod) string {
 	return fmt.Sprintf("%v", podNames)
 }
 
+func orderPodListByName(pl *corev1.PodList) {
+	// sort in reverse ordinal order to best simulate how statefulset controller
+	// updates pods in a statefulset
+	// https://kubernetes.io/docs/tutorials/stateful-application/basic-stateful-set/#rolling-update
+	// sts pods are in format <sts name>-N
+	sort.Slice(pl.Items, func(i, j int) bool {
+		arg1, _ := strconv.Atoi(strings.Split(pl.Items[i].Name, "-")[1])
+		arg2, _ := strconv.Atoi(strings.Split(pl.Items[j].Name, "-")[1])
+		return arg1 > arg2
+	})
+}
+
 func (r *HBaseReconciler) ensureStatefulSetPods(ctx context.Context, sts *appsv1.StatefulSet,
 	pickToDelete func(ctx context.Context, td, utd []*corev1.Pod) (*corev1.Pod, error)) (bool, error) {
 	podList := &corev1.PodList{}
@@ -489,10 +502,7 @@ func (r *HBaseReconciler) ensureStatefulSetPods(ctx context.Context, sts *appsv1
 
 	r.Log.Info("matched pods", "statefulset", sts.Name, "pods", len(podList.Items))
 
-	// sort pods by name to have things restarted predictably
-	sort.Slice(podList.Items, func(i, j int) bool {
-		return podList.Items[i].Name < podList.Items[j].Name
-	})
+	orderPodListByName(podList)
 
 	// make sure that all pods are up by checking that all containers are ready.
 	// the loop exists if any pod is not ready.
