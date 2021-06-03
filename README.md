@@ -18,4 +18,4 @@ Installation instructions:
 4. run `kubectl apply -f config/samples/hbase_v1_hbase.yaml` to tell the operator what to deploy.
 5. now you can go and focus on actual features of your product
 
-The perator and HBase must be deployed to the same namespace, which defaults to `hbase`.
+The operator and HBase must be deployed to the same namespace, which defaults to `hbase`.
