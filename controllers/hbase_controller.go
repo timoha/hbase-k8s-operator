@@ -641,8 +641,8 @@ const (
 )
 
 var (
-	ignoreTemplateMetadataAnnotations = map[string]bool{
-		"kubectl.kubernetes.io/last-applied-configuration": true,
+	ignoreTemplateMetadataAnnotations = map[string]struct{}{
+		"kubectl.kubernetes.io/last-applied-configuration": struct{}{},
 	}
 )
 
