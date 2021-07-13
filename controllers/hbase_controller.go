@@ -644,6 +644,24 @@ func (r *HBaseReconciler) statefulSet(hb *hbasev1.HBase,
 	stsName, cmName types.NamespacedName, ss hbasev1.ServerSpec) (*appsv1.StatefulSet, string) {
 	spec := (&ss.PodSpec).DeepCopy()
 	spec.Volumes = append(spec.Volumes, configMapVolume(cmName))
+
+	templateMetadataAnnotations := cloneMap(ss.Metadata.Annotations, hb.Annotations)
+	ignoreAnnotations := []string{
+		"kubectl.kubernetes.io/last-applied-configuration",
+	}
+
+	ignoreSet := make(map[string]bool)
+	for _, annotation := range ignoreAnnotations {
+		ignoreSet[annotation] = true
+	}
+
+	filteredTemplateMetadataAnnotations := make(map[string]string)
+	for k, v := range templateMetadataAnnotations {
+		if _, ok := ignoreSet[k]; !ok {
+			filteredTemplateMetadataAnnotations[k] = v
+		}
+	}
+
 	stsSpec := appsv1.StatefulSetSpec{
 		PodManagementPolicy: appsv1.ParallelPodManagement,
 		// OnDelete because we managed the pod restarts ourselves
@@ -660,7 +678,7 @@ func (r *HBaseReconciler) statefulSet(hb *hbasev1.HBase,
 				Labels: cloneMap(ss.Metadata.Labels, hb.Labels, map[string]string{
 					HBaseControllerNameKey: stsName.Name,
 				}),
-				Annotations: cloneMap(ss.Metadata.Annotations, hb.Annotations),
+				Annotations: filteredTemplateMetadataAnnotations,
 			},
 			Spec: *spec,
 		},
@@ -672,6 +690,7 @@ func (r *HBaseReconciler) statefulSet(hb *hbasev1.HBase,
 
 	// After revision hash calculation, actually update replica count
 	stsSpec.Replicas = pointer.Int32Ptr(ss.Count)
+	stsSpec.Template.ObjectMeta.Annotations = templateMetadataAnnotations
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
