@@ -158,12 +158,12 @@ func (r *HBaseReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	// make sure there are no regions in transition.
 	// we want this to happen after we've deployed all manifests in order to
 	// be able to fix incorrect config and not fight with operator
-	rit, err := r.isRegionsInTransition()
+	rit, err := r.regionsInTransition()
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get regions in transition: %v", err)
 	}
-	if rit {
-		log.Info("there are regions in transition, wait")
+	if rit != 0 {
+		log.Info("there are regions in transition, wait", "regions", rit)
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 	log.Info("there are no regions in transition")
@@ -426,12 +426,13 @@ func (r *HBaseReconciler) pickRegionServerToDelete(ctx context.Context, td, utd 
 	return p, nil
 }
 
-func (r *HBaseReconciler) isRegionsInTransition() (bool, error) {
+// regionsInTransition returns the number of regions in transition
+func (r *HBaseReconciler) regionsInTransition() (int, error) {
 	cs, err := r.GhAdmin.ClusterStatus()
 	if err != nil {
-		return false, err
+		return -1, err
 	}
-	return len(cs.GetRegionsInTransition()) > 0, nil
+	return len(cs.GetRegionsInTransition()), nil
 }
 
 func (r *HBaseReconciler) pickMasterToDelete(ctx context.Context, td, utd []*corev1.Pod) (*corev1.Pod, error) {
