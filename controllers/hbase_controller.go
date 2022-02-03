@@ -333,7 +333,7 @@ func (r *HBaseReconciler) moveRegions(ctx context.Context, regions [][]byte, tar
 		if targets.Len() > 0 {
 			// get the regionserver with least regions
 			rc := heap.Pop(&targets).(*rsCount)
-			r.Log.Info("moving region", "region", string(region),
+			r.Log.Info("moving regions to regionserver with least regions", "region", string(region),
 				"target", rc.serverName,
 				"current_count", rc.regionCount)
 			mr, err = hrpc.NewMoveRegion(ctx, region, hrpc.WithDestinationRegionServer(rc.serverName))
@@ -342,8 +342,8 @@ func (r *HBaseReconciler) moveRegions(ctx context.Context, regions [][]byte, tar
 			rc.regionCount++
 			heap.Push(&targets, rc)
 		} else {
-			// no targets
-			r.Log.Info("moving region without target", "region", string(region))
+			// moving regions without a particular target - this is not an error case and guaranteed to hit when draining the first regionserver in the cluster
+			r.Log.Info("regionservers are balanced and there isn't a regionserver with least regions; moving regions without particular regionserver target", "region", string(region))
 			mr, err = hrpc.NewMoveRegion(ctx, region)
 		}
 		if err != nil {
