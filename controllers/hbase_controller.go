@@ -89,15 +89,14 @@ type HBaseReconciler struct {
 // +kubebuilder:rbac:groups="",namespace="hbase",resources=services,verbs=*
 // +kubebuilder:rbac:groups="apps",namespace="hbase",resources=statefulsets,verbs=*
 
-func (r *HBaseReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	_ = context.Background()
+func (r *HBaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("hbase", req.NamespacedName)
 
 	log.Info("got request")
 
 	// Fetch the App instance.
 	app := &hbasev1.HBase{}
-	err := r.Get(context.TODO(), req.NamespacedName, app)
+	err := r.Get(ctx, req.NamespacedName, app)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			r.Log.Error(err, "hbase crd is not found")
@@ -169,7 +168,7 @@ func (r *HBaseReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	log.Info("there are no regions in transition")
 
 	r.Log.Info("reconciling masters")
-	mastersOk, err := r.ensureStatefulSetPods(context.TODO(), masterSts, r.pickMasterToDelete)
+	mastersOk, err := r.ensureStatefulSetPods(ctx, masterSts, r.pickMasterToDelete)
 	if err != nil {
 		r.Log.Error(err, "failed reconciling HBase Masters")
 		return ctrl.Result{}, err
@@ -179,7 +178,7 @@ func (r *HBaseReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	}
 
 	r.Log.Info("reconciling regionservers")
-	rsOk, err := r.ensureStatefulSetPods(context.TODO(), rsSts, r.pickRegionServerToDelete)
+	rsOk, err := r.ensureStatefulSetPods(ctx, rsSts, r.pickRegionServerToDelete)
 	if err != nil {
 		r.Log.Error(err, "failed reconciling HBase RegionServers")
 		return ctrl.Result{}, err
@@ -188,7 +187,7 @@ func (r *HBaseReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
 	}
 
-	if err := r.deleteUnusedConfigMaps(context.TODO(), app, configMapName); err != nil {
+	if err := r.deleteUnusedConfigMaps(ctx, app, configMapName); err != nil {
 		return ctrl.Result{}, err
 	}
 
