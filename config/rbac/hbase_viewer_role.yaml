@@ -1,0 +1,27 @@
+# permissions for end users to view hbases.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: hbase-viewer-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: hbase-k8s-operator
+    app.kubernetes.io/part-of: hbase-k8s-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: hbase-viewer-role
+rules:
+- apiGroups:
+  - hbase.elenskiy.co
+  resources:
+  - hbases
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - hbase.elenskiy.co
+  resources:
+  - hbases/status
+  verbs:
+  - get
