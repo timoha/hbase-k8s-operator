@@ -236,7 +236,7 @@ var _ = Describe("HBase controller", func() {
 			getExistingSts("hbasemaster", namespace, createdMasterStatefulSet)
 
 			By("By checking master statefulset has correct number of replicas")
-			Ω(hb.Spec.MasterSpec.Count).Should(Equal(int32(2)))
+			Ω(*createdMasterStatefulSet.Spec.Replicas).Should(Equal(int32(2)))
 
 			By("By checking master statefulset has mounted correct confgmap")
 			vs := createdMasterStatefulSet.Spec.Template.Spec.Volumes
@@ -263,7 +263,7 @@ var _ = Describe("HBase controller", func() {
 			getExistingSts("regionserver", namespace, createdRegionServerStatefulSet)
 
 			By("By checking regionserver statefulset has correct number of replicas")
-			Ω(hb.Spec.RegionServerSpec.Count).Should(Equal(int32(3)))
+			Ω(*createdRegionServerStatefulSet.Spec.Replicas).Should(Equal(int32(3)))
 
 			By("By checking regionserver statefulset has mounted correct confgmap")
 			vs = createdRegionServerStatefulSet.Spec.Template.Spec.Volumes

@@ -90,32 +90,33 @@ type HBaseReconciler struct {
 // +kubebuilder:rbac:groups="apps",namespace="hbase",resources=statefulsets,verbs=*
 
 func (r *HBaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := r.Log.WithValues("hbase", req.NamespacedName)
+	log := r.Log.WithValues("hbase_resource", req.NamespacedName)
 
-	log.Info("got request")
+	log.Info("Start reconciliation")
 
 	// Fetch the App instance.
 	app := &hbasev1.HBase{}
 	err := r.Get(ctx, req.NamespacedName, app)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			r.Log.Error(err, "hbase crd is not found")
+			r.Log.Error(err, "HBase CRD is not found")
 			return ctrl.Result{}, nil
 		}
-		r.Log.Error(err, "failed getting hbase crd")
+		r.Log.Error(err, "Failed getting HBase CRD")
 		return ctrl.Result{}, err
 	}
 
-	log.Info("got hbase crd")
+	log.Info("got HBase CRD")
 
 	serviceOk, err := r.ensureService(app)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 	if !serviceOk {
+		log.Info("HBase service reconfigured, reconciling again")
 		return ctrl.Result{Requeue: true}, nil
 	}
-	log.Info("hbase headless service is in sync")
+	log.Info("HBase headless service is in sync")
 
 	// deploy configmap if it doesn't exist
 	configMapName := getConfigMapName(app)
@@ -124,35 +125,36 @@ func (r *HBaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, err
 	}
 	if !cmOk {
+		log.Info("HBase ConfigMap reconfigured, reconciling again")
 		return ctrl.Result{Requeue: true}, nil
 	}
-	log.Info("hbase configmap is in sync")
+	log.Info("HBase ConfigMap is in sync")
 
 	// update hbasemaster statefulset
 	masterName := types.NamespacedName{Name: "hbasemaster", Namespace: app.Namespace}
 	masterSts, masterUpdated, err := r.ensureStatefulSet(app, masterName, configMapName, app.Spec.MasterSpec)
 	if err != nil {
-		r.Log.Error(err, "failed reconciling HBase Master StatefulSet")
+		r.Log.Error(err, "Failed reconciling HBase Master StatefulSet")
 		return ctrl.Result{}, err
 	}
 	if masterUpdated {
-		log.Info("hbase master statefulset updated")
+		log.Info("HBase Master StatefulSet updated, reconsiling again")
 		return ctrl.Result{Requeue: true}, nil
 	}
-	log.Info("hbasemaster statefulset is in sync")
+	log.Info("HBase Master StatefulSet is in sync")
 
 	// update regionserver statefulset
 	rsName := types.NamespacedName{Name: "regionserver", Namespace: app.Namespace}
 	rsSts, rsUpdated, err := r.ensureStatefulSet(app, rsName, configMapName, app.Spec.RegionServerSpec)
 	if err != nil {
-		r.Log.Error(err, "failed reconciling HBase RegionServer StatefulSet")
+		r.Log.Error(err, "Failed reconciling HBase RegionServer StatefulSet")
 		return ctrl.Result{}, err
 	}
 	if rsUpdated {
-		log.Info("hbase regionserver statefulset updated")
+		log.Info("HBase RegionServer StatefulSet updated")
 		return ctrl.Result{Requeue: true}, nil
 	}
-	log.Info("regionserver statefulset is in sync")
+	log.Info("RegionServer StatefulSet is in sync")
 
 	// make sure there are no regions in transition.
 	// we want this to happen after we've deployed all manifests in order to
@@ -162,35 +164,37 @@ func (r *HBaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, fmt.Errorf("failed to get regions in transition: %v", err)
 	}
 	if rit != 0 {
-		log.Info("there are regions in transition, wait", "regions", rit)
+		log.Info("There are regions in transition, wait and restart reconsiling", "regions", rit)
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
-	log.Info("there are no regions in transition")
+	log.Info("There are no regions in transition")
 
-	r.Log.Info("reconciling masters")
+	r.Log.Info("Reconciling Master pods")
 	mastersOk, err := r.ensureStatefulSetPods(ctx, masterSts, r.pickMasterToDelete)
 	if err != nil {
-		r.Log.Error(err, "failed reconciling HBase Masters")
+		r.Log.Error(err, "Failed reconciling HBase Master pods")
 		return ctrl.Result{}, err
 	}
 	if !mastersOk {
 		return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
 	}
 
-	r.Log.Info("reconciling regionservers")
+	r.Log.Info("Reconciling RegionServer Pods")
 	rsOk, err := r.ensureStatefulSetPods(ctx, rsSts, r.pickRegionServerToDelete)
 	if err != nil {
-		r.Log.Error(err, "failed reconciling HBase RegionServers")
+		r.Log.Error(err, "Failed reconciling HBase RegionServer pods")
 		return ctrl.Result{}, err
 	}
 	if !rsOk {
 		return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
 	}
 
+	r.Log.Info("Deleting unused config maps")
 	if err := r.deleteUnusedConfigMaps(ctx, app, configMapName); err != nil {
 		return ctrl.Result{}, err
 	}
 
+	r.Log.Info("Everything is up to date!")
 	return ctrl.Result{}, nil
 }
 
@@ -550,7 +554,7 @@ func (r *HBaseReconciler) ensureStatefulSetPods(ctx context.Context, sts *appsv1
 		}
 	}
 
-	r.Log.Info("pick pod to delete", "statefulset", sts.Name, "pods", sprintPodList(toDelete))
+	r.Log.Info("pick pod to delete", "StatefulSet", sts.Name, "pods", sprintPodList(toDelete))
 
 	// delete one pod at a time
 	p, err := pickToDelete(ctx, toDelete, upToDate)
@@ -563,7 +567,7 @@ func (r *HBaseReconciler) ensureStatefulSetPods(ctx context.Context, sts *appsv1
 		return false, r.Delete(ctx, p)
 	}
 
-	r.Log.Info("statefulsets pods are reconciled")
+	r.Log.Info("pods are up to date", "StatefulSet" ,sts.Name)
 	// all is perfect, ensured
 	return true, nil
 
@@ -587,24 +591,28 @@ func (r *HBaseReconciler) ensureStatefulSet(hb *hbasev1.HBase,
 		}
 		return nil, false, err
 	}
-	r.Log.Info("updating revision", "sameRevision", expectedRevision != actual.Annotations[HBaseControllerRevisionKey])
-	r.Log.Info("updating replica count", "sameReplicaCount", *actual.Spec.Replicas != *expected.Spec.Replicas)
 
-	if actual.Annotations != nil &&
-		actual.Annotations[HBaseControllerRevisionKey] == expectedRevision &&
-		*actual.Spec.Replicas == *expected.Spec.Replicas {
-		r.Log.Info("StatefulSet is up-to-date", "name", stsName)
-		return actual, false, nil
+	var actualRevision string
+	if actual.Annotations != nil {
+		actualRevision = actual.Annotations[HBaseControllerRevisionKey]
 	}
 
-	// update
-	if err := r.Update(context.TODO(), expected); err != nil {
-		r.Log.Info("StatefulSet is up-to-date", "name", stsName)
-		return nil, false, err
-	}
-	r.Log.Info("updated StatefulSet", "name", stsName)
-	return expected, true, nil
+	r.Log.Info("StatefulSet reconciliation",
+		"name", stsName,
+		"revision is up to date", actualRevision == expectedRevision,
+		"expected replica count", *actual.Spec.Replicas == *expected.Spec.Replicas)
 
+	if *actual.Spec.Replicas != *expected.Spec.Replicas || actualRevision != expectedRevision {
+		// Update StatefulSet to expected configuration
+		if err := r.Update(context.TODO(), expected); err != nil {
+			return nil, false, err
+		}
+		r.Log.Info("updated StatefulSet", "name", stsName)
+		return expected, true, nil
+	}
+
+	r.Log.Info("StatefulSet is up to date", "name", stsName)
+	return actual, false, nil
 }
 
 func configMapVolume(cmName types.NamespacedName) corev1.Volume {
@@ -687,9 +695,6 @@ func (r *HBaseReconciler) statefulSet(hb *hbasev1.HBase,
 
 	// After revision hash calculation, actually update replica count
 	stsSpec.Replicas = pointer.Int32Ptr(ss.Count)
-
-	// Restore metadata annotations without filtering
-	stsSpec.Template.ObjectMeta.Annotations = templateMetadataAnnotations
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
