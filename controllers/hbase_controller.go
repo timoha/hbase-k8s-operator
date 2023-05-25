@@ -138,7 +138,7 @@ func (r *HBaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, err
 	}
 	if masterUpdated {
-		log.Info("HBase Master StatefulSet updated, reconsiling again")
+		log.Info("HBase Master StatefulSet updated, reconciling again")
 		return ctrl.Result{Requeue: true}, nil
 	}
 	log.Info("HBase Master StatefulSet is in sync")
@@ -164,7 +164,7 @@ func (r *HBaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, fmt.Errorf("failed to get regions in transition: %v", err)
 	}
 	if rit != 0 {
-		log.Info("There are regions in transition, wait and restart reconsiling", "regions", rit)
+		log.Info("There are regions in transition, wait and restart reconciling", "regions", rit)
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 	log.Info("There are no regions in transition")
@@ -567,7 +567,7 @@ func (r *HBaseReconciler) ensureStatefulSetPods(ctx context.Context, sts *appsv1
 		return false, r.Delete(ctx, p)
 	}
 
-	r.Log.Info("pods are up to date", "StatefulSet" ,sts.Name)
+	r.Log.Info("pods are up to date", "StatefulSet", sts.Name)
 	// all is perfect, ensured
 	return true, nil
 
@@ -600,7 +600,8 @@ func (r *HBaseReconciler) ensureStatefulSet(hb *hbasev1.HBase,
 	r.Log.Info("StatefulSet reconciliation",
 		"name", stsName,
 		"revision is up to date", actualRevision == expectedRevision,
-		"expected replica count", *actual.Spec.Replicas == *expected.Spec.Replicas)
+		"expected replicas", *actual.Spec.Replicas,
+		"actual replicas", *expected.Spec.Replicas)
 
 	if *actual.Spec.Replicas != *expected.Spec.Replicas || actualRevision != expectedRevision {
 		// Update StatefulSet to expected configuration
