@@ -600,8 +600,8 @@ func (r *HBaseReconciler) ensureStatefulSet(hb *hbasev1.HBase,
 	r.Log.Info("StatefulSet reconciliation",
 		"name", stsName,
 		"revision is up to date", actualRevision == expectedRevision,
-		"expected replicas", *actual.Spec.Replicas,
-		"actual replicas", *expected.Spec.Replicas)
+		"expected replicas", *expected.Spec.Replicas,
+		"actual replicas", *actual.Spec.Replicas)
 
 	if *actual.Spec.Replicas != *expected.Spec.Replicas || actualRevision != expectedRevision {
 		// Update StatefulSet to expected configuration
