@@ -18,6 +18,8 @@ package main
 
 import (
 	"flag"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -47,18 +49,30 @@ func init() {
 
 func main() {
 	var metricsAddr string
+	var pprofAddr string
 	var enableLeaderElection bool
 	var zkQuorum string
 	var namespace string
 	flag.StringVar(&zkQuorum, "zkquorum", "localhost:2181",
 		"Comma-separated list of zookeeper addresses.")
 	flag.StringVar(&metricsAddr, "metrics-addr", ":8080", "The address the metric endpoint binds to.")
+	flag.StringVar(&pprofAddr, "pprof-addr", ":6060", "The address the pprof endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "enable-leader-election", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.StringVar(&namespace, "namespace", "hbase", "The namespace to watch for resource definitions.")
 
 	flag.Parse()
+
+	if pprofAddr != "" {
+		// Manager does not expose the mux that it uses for the metrics server, so we must start a
+		// new server with the pprof handlers.
+		go func() {
+			logger := zap.New(zap.UseDevMode(true))
+			logger.Info("Starting pprof server", "pprof-addr", pprofAddr)
+			logger.Error(http.ListenAndServe(pprofAddr, nil), "Error running pprof server")
+		}()
+	}
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
 
