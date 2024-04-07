@@ -1,8 +1,10 @@
 apiVersion: hbase.elenskiy.co/v1
 kind: HBase
 metadata:
-  name: hbase
-  namespace: hbase
+  labels:
+    app.kubernetes.io/name: hbase-k8s-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: hbase-sample
 spec:
   config:
     data:
@@ -21,58 +23,58 @@ spec:
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchExpressions:
-              - key: hbase
-                operator: In
-                values:
-                - master
-            namespaces:
-            - hbase
-            topologyKey: kubernetes.io/hostname
+            - labelSelector:
+                matchExpressions:
+                  - key: hbase
+                    operator: In
+                    values:
+                      - master
+              namespaces:
+                - hbase
+              topologyKey: kubernetes.io/hostname
       serviceAccountName: hbase
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
       containers:
-      - name: server
-        image: <your hbase image>
-        resources:
-          requests:
-            cpu: "2"
-            memory: 2Gi
-          limits:
-            cpu: "2"
-            memory: 2Gi
-        args: ["hbase", "master", "start"]
-        env:
-        - name: HBASE_LOGFILE
-          value: "master.log"
-        ports:
-        - containerPort: 16000
-          name: ipc
-        - containerPort: 16010
-          name: ui
-        - containerPort: 7072
-          name: metrics
-        volumeMounts:
-        - name: config
-          mountPath: /hbase/conf
-        - name: config
-          mountPath: /hadoop/etc/hadoop/hdfs-site.xml
-          subPath: hdfs-site.xml
-        - name: config
-          mountPath: /hadoop/etc/hadoop/core-site.xml
-          subPath: core-site.xml
-        - name: config
-          mountPath: /hadoop/etc/hadoop/hadoop-env.sh
-          subPath: hadoop-env.sh
-        - name: logs
-          mountPath: /logs
+        - name: server
+          image: <your hbase image>
+          resources:
+            requests:
+              cpu: "2"
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          args: ["hbase", "master", "start"]
+          env:
+            - name: HBASE_LOGFILE
+              value: "master.log"
+          ports:
+            - containerPort: 16000
+              name: ipc
+            - containerPort: 16010
+              name: ui
+            - containerPort: 7072
+              name: metrics
+          volumeMounts:
+            - name: config
+              mountPath: /hbase/conf
+            - name: config
+              mountPath: /hadoop/etc/hadoop/hdfs-site.xml
+              subPath: hdfs-site.xml
+            - name: config
+              mountPath: /hadoop/etc/hadoop/core-site.xml
+              subPath: core-site.xml
+            - name: config
+              mountPath: /hadoop/etc/hadoop/hadoop-env.sh
+              subPath: hadoop-env.sh
+            - name: logs
+              mountPath: /logs
       volumes:
-      - name: logs
-        emptyDir: {}
+        - name: logs
+          emptyDir: {}
       terminationGracePeriodSeconds: 60
   regionServerSpec:
     count: 3
@@ -84,81 +86,81 @@ spec:
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchExpressions:
-              - key: hbase
-                operator: In
-                values:
-                - regionserver
-            namespaces:
-            - hbase
-            topologyKey: kubernetes.io/hostname
+            - labelSelector:
+                matchExpressions:
+                  - key: hbase
+                    operator: In
+                    values:
+                      - regionserver
+              namespaces:
+                - hbase
+              topologyKey: kubernetes.io/hostname
       serviceAccountName: hbase
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
       containers:
-      - name: server
-        image: <your hbase image>
-        resources:
-          requests:
-            cpu: 8
-            memory: 32Gi
-          limits:
-            cpu: 8
-            memory: 32Gi
-        args:
-        - "hbase"
-        - "regionserver"
-        - "-Dhbase.regionserver.hostname=$(PODNAME).hbase.hbase.svc.cluster.local"
-        - "start"
-        env:
-        - name: HBASE_LOGFILE
-          value: "regionserver.log"
-        - name: PODNAME
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.name
-        ports:
-        - containerPort: 16020
-          name: ipc
-        - containerPort: 16030
-          name: ui
-        - containerPort: 7072
-          name: metrics
-        livenessProbe:
-          httpGet:
-            path: /rs-status
-            port: ui
-          initialDelaySeconds: 10
-          periodSeconds: 10
-          timeoutSeconds: 5
-        # TODO: switch to startupProbe once upgraded to 1.16+
-        readinessProbe:
-          exec:
-            command:
-            - sh
-            - -c
-            - hbase zkcli stat "/hbase/rs/$(wget -qO - localhost:16030/dump|awk '/RegionServer status for/ {print $4}')" 2>&1|grep -q ephemeralOwner
-          initialDelaySeconds: 10
-          periodSeconds: 30
-          timeoutSeconds: 10
-        volumeMounts:
-        - name: config
-          mountPath: /hbase/conf
-        - name: config
-          mountPath: /hadoop/etc/hadoop/hdfs-site.xml
-          subPath: hdfs-site.xml
-        - name: config
-          mountPath: /hadoop/etc/hadoop/core-site.xml
-          subPath: core-site.xml
-        - name: config
-          mountPath: /hadoop/etc/hadoop/hadoop-env.sh
-          subPath: hadoop-env.sh
-        - name: logs
-          mountPath: /logs
+        - name: server
+          image: <your hbase image>
+          resources:
+            requests:
+              cpu: 8
+              memory: 32Gi
+            limits:
+              cpu: 8
+              memory: 32Gi
+          args:
+            - "hbase"
+            - "regionserver"
+            - "-Dhbase.regionserver.hostname=$(PODNAME).hbase.hbase.svc.cluster.local"
+            - "start"
+          env:
+            - name: HBASE_LOGFILE
+              value: "regionserver.log"
+            - name: PODNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          ports:
+            - containerPort: 16020
+              name: ipc
+            - containerPort: 16030
+              name: ui
+            - containerPort: 7072
+              name: metrics
+          livenessProbe:
+            httpGet:
+              path: /rs-status
+              port: ui
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          # TODO: switch to startupProbe once upgraded to 1.16+
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - hbase zkcli stat "/hbase/rs/$(wget -qO - localhost:16030/dump|awk '/RegionServer status for/ {print $4}')" 2>&1|grep -q ephemeralOwner
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 10
+          volumeMounts:
+            - name: config
+              mountPath: /hbase/conf
+            - name: config
+              mountPath: /hadoop/etc/hadoop/hdfs-site.xml
+              subPath: hdfs-site.xml
+            - name: config
+              mountPath: /hadoop/etc/hadoop/core-site.xml
+              subPath: core-site.xml
+            - name: config
+              mountPath: /hadoop/etc/hadoop/hadoop-env.sh
+              subPath: hadoop-env.sh
+            - name: logs
+              mountPath: /logs
       volumes:
-      - name: logs
-        emptyDir: {}
+        - name: logs
+          emptyDir: {}
       terminationGracePeriodSeconds: 60

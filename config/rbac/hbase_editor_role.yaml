@@ -11,21 +11,21 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: hbase-editor-role
 rules:
-- apiGroups:
-  - hbase.elenskiy.co
-  resources:
-  - hbases
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - hbase.elenskiy.co
-  resources:
-  - hbases/status
-  verbs:
-  - get
+  - apiGroups:
+      - hbase.elenskiy.co
+    resources:
+      - hbases
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - hbase.elenskiy.co
+    resources:
+      - hbases/status
+    verbs:
+      - get

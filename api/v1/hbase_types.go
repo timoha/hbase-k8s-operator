@@ -1,6 +1,4 @@
 /*
-
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -73,10 +71,12 @@ type ServerSpec struct {
 
 // HBaseStatus defines the observed state of HBase
 type HBaseStatus struct {
+	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
+	// Important: Run "make" to regenerate code after modifying this file
 }
 
-// +kubebuilder:object:root=true
-// +kubebuilder:subresource:status
+//+kubebuilder:object:root=true
+//+kubebuilder:subresource:status
 
 // HBase is the Schema for the hbases API
 type HBase struct {
@@ -87,7 +87,7 @@ type HBase struct {
 	Status HBaseStatus `json:"status,omitempty"`
 }
 
-// +kubebuilder:object:root=true
+//+kubebuilder:object:root=true
 
 // HBaseList contains a list of HBase
 type HBaseList struct {

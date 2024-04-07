@@ -1,4 +1,18 @@
-package controllers
+/*
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package controller
 
 import (
 	"bytes"
@@ -19,7 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -171,7 +185,7 @@ func (rst *regionServerTargets) Pop() interface{} {
 
 // TODO: make parallel
 func (r *HBaseReconciler) moveRegions(ctx context.Context, regions [][]byte, targets regionServerTargets) error {
-	// important to understand that this heuristic to deside which regionserver to move
+	// important to understand that this heuristic to decide which regionserver to move
 	// to does not account for the most recent state of the cluster. For example, if some
 	// regionserver were to be restarted during region moving, the region counts will not be updated.
 	var err error
@@ -189,7 +203,8 @@ func (r *HBaseReconciler) moveRegions(ctx context.Context, regions [][]byte, tar
 			rc.regionCount++
 			heap.Push(&targets, rc)
 		} else {
-			// moving regions without a particular target - this is not an error case and guaranteed to hit when draining the first regionserver in the cluster
+			// moving regions without a particular target - this is not an error case and guaranteed
+			// to hit when draining the first regionserver in the cluster
 			r.Log.Info("regionservers are balanced and there isn't a regionserver with least regions; moving regions without particular regionserver target", "region", string(region))
 			mr, err = hrpc.NewMoveRegion(ctx, region)
 		}
@@ -318,7 +333,7 @@ func (r *HBaseReconciler) pickMasterToDelete(ctx context.Context, td, utd []*cor
 }
 
 func sprintPodList(l []*corev1.Pod) string {
-	var podNames []string
+	podNames := make([]string, 0, len(l))
 	for _, p := range l {
 		podNames = append(podNames, p.Name)
 	}
@@ -465,7 +480,7 @@ func configMapVolume(cmName types.NamespacedName) corev1.Volume {
 		Name: "config",
 		VolumeSource: corev1.VolumeSource{
 			ConfigMap: &corev1.ConfigMapVolumeSource{
-				DefaultMode: pointer.Int32Ptr(420),
+				DefaultMode: ptr.To(int32(420)),
 				LocalObjectReference: corev1.LocalObjectReference{
 					Name: cmName.Name,
 				},
@@ -495,7 +510,7 @@ const (
 
 var (
 	ignoreTemplateMetadataAnnotations = map[string]struct{}{
-		"kubectl.kubernetes.io/last-applied-configuration": struct{}{},
+		"kubectl.kubernetes.io/last-applied-configuration": {},
 	}
 )
 
@@ -539,7 +554,7 @@ func (r *HBaseReconciler) statefulSet(hb *hbasev1.HBase,
 	rev := fmt.Sprintf("%x", h.Sum(nil))
 
 	// After revision hash calculation, actually update replica count
-	stsSpec.Replicas = pointer.Int32Ptr(ss.Count)
+	stsSpec.Replicas = ptr.To(ss.Count)
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -576,7 +591,7 @@ func (r *HBaseReconciler) configMap(hb *hbasev1.HBase,
 			Labels:      cloneMap(configMapLabels, hb.Labels),
 			Annotations: cloneMap(hb.Annotations),
 		},
-		Immutable: pointer.BoolPtr(true),
+		Immutable: ptr.To(true),
 		Data:      hb.Spec.Config.Data,
 	}
 	if err := controllerutil.SetControllerReference(hb, cm, r.Scheme); err != nil {
@@ -598,7 +613,7 @@ func (r *HBaseReconciler) headlessService(hb *hbasev1.HBase) *corev1.Service {
 			ClusterIP: "None",
 			Selector:  map[string]string{"app": "hbase"},
 			Ports: []corev1.ServicePort{
-				corev1.ServicePort{
+				{
 					Name: "placeholder",
 					Port: 1234,
 				},
