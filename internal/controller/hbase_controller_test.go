@@ -26,7 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	hbasev1 "github.com/timoha/hbase-k8s-operator/api/v1"
@@ -49,10 +49,10 @@ func makeHBaseSpec(confData map[string]string) *hbasev1.HBase {
 				},
 				PodSpec: corev1.PodSpec{
 					Containers: []corev1.Container{
-						corev1.Container{
+						{
 							Name: "server",
 							VolumeMounts: []corev1.VolumeMount{
-								corev1.VolumeMount{
+								{
 									Name:      "config",
 									MountPath: "/hbase/conf/hbase-site.xml",
 									SubPath:   "hbase-site.xml",
@@ -71,10 +71,10 @@ func makeHBaseSpec(confData map[string]string) *hbasev1.HBase {
 				},
 				PodSpec: corev1.PodSpec{
 					Containers: []corev1.Container{
-						corev1.Container{
+						{
 							Name: "server",
 							VolumeMounts: []corev1.VolumeMount{
-								corev1.VolumeMount{
+								{
 									Name:      "config",
 									MountPath: "/hbase/conf/hbase-site.xml",
 									SubPath:   "hbase-site.xml",
@@ -159,7 +159,7 @@ var _ = Describe("HBase controller", func() {
 				Name: "config",
 				VolumeSource: corev1.VolumeSource{
 					ConfigMap: &corev1.ConfigMapVolumeSource{
-						DefaultMode: pointer.Int32Ptr(420),
+						DefaultMode: ptr.To(int32(420)),
 						LocalObjectReference: corev1.LocalObjectReference{
 							Name: createdConfigMap.Name,
 						},
@@ -186,7 +186,7 @@ var _ = Describe("HBase controller", func() {
 				Name: "config",
 				VolumeSource: corev1.VolumeSource{
 					ConfigMap: &corev1.ConfigMapVolumeSource{
-						DefaultMode: pointer.Int32Ptr(420),
+						DefaultMode: ptr.To(int32(420)),
 						LocalObjectReference: corev1.LocalObjectReference{
 							Name: createdConfigMap.Name,
 						},

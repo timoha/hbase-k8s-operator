@@ -49,7 +49,7 @@ func DeepHashObject(hasher hash.Hash, objectToWrite interface{}) {
 		DisableMethods: true,
 		SpewKeys:       true,
 	}
-	printer.Fprintf(hasher, "%#v", objectToWrite)
+	_, _ = printer.Fprintf(hasher, "%#v", objectToWrite)
 }
 
 const (
@@ -125,7 +125,7 @@ func (r *HBaseReconciler) deleteUnusedConfigMaps(ctx context.Context, hb *hbasev
 	return nil
 }
 
-func (r *HBaseReconciler) getRegionsPerRegionServer(ctx context.Context) (map[string][][]byte, error) {
+func (r *HBaseReconciler) getRegionsPerRegionServer(_ context.Context) (map[string][][]byte, error) {
 	// get regions via cluster status because this way we can get
 	// regionservers that don't have any regions
 	cs, err := r.GhAdmin.ClusterStatus()
@@ -205,7 +205,10 @@ func (r *HBaseReconciler) moveRegions(ctx context.Context, regions [][]byte, tar
 		} else {
 			// moving regions without a particular target - this is not an error case and guaranteed
 			// to hit when draining the first regionserver in the cluster
-			r.Log.Info("regionservers are balanced and there isn't a regionserver with least regions; moving regions without particular regionserver target", "region", string(region))
+			r.Log.Info(
+				"regionservers are balanced; moving regions without particular regionserver target",
+				"region", string(region),
+			)
 			mr, err = hrpc.NewMoveRegion(ctx, region)
 		}
 		if err != nil {
@@ -620,6 +623,6 @@ func (r *HBaseReconciler) headlessService(hb *hbasev1.HBase) *corev1.Service {
 			},
 		},
 	}
-	controllerutil.SetControllerReference(hb, srv, r.Scheme)
+	_ = controllerutil.SetControllerReference(hb, srv, r.Scheme)
 	return srv
 }
