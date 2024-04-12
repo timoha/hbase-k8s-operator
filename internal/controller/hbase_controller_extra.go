@@ -12,7 +12,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controllers
+package controller
 
 import (
 	"bytes"
@@ -24,37 +24,19 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/davecgh/go-spew/spew"
-	"github.com/go-logr/logr"
 	hbasev1 "github.com/timoha/hbase-k8s-operator/api/v1"
-	"github.com/tsuna/gohbase"
 	"github.com/tsuna/gohbase/hrpc"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/pointer"
-	ctrl "sigs.k8s.io/controller-runtime"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
-
-/*
-Copyright 2015 The Kubernetes Authors.
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-    http://www.apache.org/licenses/LICENSE-2.0
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
 
 // DeepHashObject writes specified object to hash using the spew library
 // which follows pointers and prints actual values of the nested objects
@@ -67,136 +49,12 @@ func DeepHashObject(hasher hash.Hash, objectToWrite interface{}) {
 		DisableMethods: true,
 		SpewKeys:       true,
 	}
-	printer.Fprintf(hasher, "%#v", objectToWrite)
+	_, _ = printer.Fprintf(hasher, "%#v", objectToWrite)
 }
 
 const (
 	headlessServiceName = "hbase"
 )
-
-// HBaseReconciler reconciles a HBase object
-type HBaseReconciler struct {
-	client.Client
-	Log     logr.Logger
-	Scheme  *runtime.Scheme
-	GhAdmin gohbase.AdminClient
-}
-
-// +kubebuilder:rbac:groups=hbase.elenskiy.co,namespace="hbase",resources=hbases,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=hbase.elenskiy.co,namespace="hbase",resources=hbases/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups="",namespace="hbase",resources=pods,verbs=get;list;delete;watch
-// +kubebuilder:rbac:groups="",namespace="hbase",resources=configmaps,verbs=*
-// +kubebuilder:rbac:groups="",namespace="hbase",resources=services,verbs=*
-// +kubebuilder:rbac:groups="apps",namespace="hbase",resources=statefulsets,verbs=*
-
-func (r *HBaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := r.Log.WithValues("hbase_resource", req.NamespacedName)
-
-	log.Info("Start reconciliation")
-
-	// Fetch the App instance.
-	app := &hbasev1.HBase{}
-	err := r.Get(ctx, req.NamespacedName, app)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			r.Log.Error(err, "HBase CRD is not found")
-			return ctrl.Result{}, nil
-		}
-		r.Log.Error(err, "Failed getting HBase CRD")
-		return ctrl.Result{}, err
-	}
-
-	log.Info("got HBase CRD")
-
-	serviceOk, err := r.ensureService(app)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if !serviceOk {
-		log.Info("HBase service reconfigured, reconciling again")
-		return ctrl.Result{Requeue: true}, nil
-	}
-	log.Info("HBase headless service is in sync")
-
-	// deploy configmap if it doesn't exist
-	configMapName := getConfigMapName(app)
-	cmOk, err := r.ensureConfigMap(app, configMapName)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if !cmOk {
-		log.Info("HBase ConfigMap reconfigured, reconciling again")
-		return ctrl.Result{Requeue: true}, nil
-	}
-	log.Info("HBase ConfigMap is in sync")
-
-	// update hbasemaster statefulset
-	masterName := types.NamespacedName{Name: "hbasemaster", Namespace: app.Namespace}
-	masterSts, masterUpdated, err := r.ensureStatefulSet(app, masterName, configMapName, app.Spec.MasterSpec)
-	if err != nil {
-		r.Log.Error(err, "Failed reconciling HBase Master StatefulSet")
-		return ctrl.Result{}, err
-	}
-	if masterUpdated {
-		log.Info("HBase Master StatefulSet updated, reconciling again")
-		return ctrl.Result{Requeue: true}, nil
-	}
-	log.Info("HBase Master StatefulSet is in sync")
-
-	// update regionserver statefulset
-	rsName := types.NamespacedName{Name: "regionserver", Namespace: app.Namespace}
-	rsSts, rsUpdated, err := r.ensureStatefulSet(app, rsName, configMapName, app.Spec.RegionServerSpec)
-	if err != nil {
-		r.Log.Error(err, "Failed reconciling HBase RegionServer StatefulSet")
-		return ctrl.Result{}, err
-	}
-	if rsUpdated {
-		log.Info("HBase RegionServer StatefulSet updated")
-		return ctrl.Result{Requeue: true}, nil
-	}
-	log.Info("RegionServer StatefulSet is in sync")
-
-	// make sure there are no regions in transition.
-	// we want this to happen after we've deployed all manifests in order to
-	// be able to fix incorrect config and not fight with operator
-	rit, err := r.regionsInTransition()
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get regions in transition: %v", err)
-	}
-	if rit != 0 {
-		log.Info("There are regions in transition, wait and restart reconciling", "regions", rit)
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
-	}
-	log.Info("There are no regions in transition")
-
-	r.Log.Info("Reconciling Master pods")
-	mastersOk, err := r.ensureStatefulSetPods(ctx, masterSts, r.pickMasterToDelete)
-	if err != nil {
-		r.Log.Error(err, "Failed reconciling HBase Master pods")
-		return ctrl.Result{}, err
-	}
-	if !mastersOk {
-		return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
-	}
-
-	r.Log.Info("Reconciling RegionServer Pods")
-	rsOk, err := r.ensureStatefulSetPods(ctx, rsSts, r.pickRegionServerToDelete)
-	if err != nil {
-		r.Log.Error(err, "Failed reconciling HBase RegionServer pods")
-		return ctrl.Result{}, err
-	}
-	if !rsOk {
-		return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
-	}
-
-	r.Log.Info("Deleting unused config maps")
-	if err := r.deleteUnusedConfigMaps(ctx, app, configMapName); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	r.Log.Info("Everything is up to date!")
-	return ctrl.Result{}, nil
-}
 
 func (r *HBaseReconciler) ensureConfigMap(hb *hbasev1.HBase, name types.NamespacedName) (bool, error) {
 	configMap := &corev1.ConfigMap{}
@@ -267,7 +125,7 @@ func (r *HBaseReconciler) deleteUnusedConfigMaps(ctx context.Context, hb *hbasev
 	return nil
 }
 
-func (r *HBaseReconciler) getRegionsPerRegionServer(ctx context.Context) (map[string][][]byte, error) {
+func (r *HBaseReconciler) getRegionsPerRegionServer(_ context.Context) (map[string][][]byte, error) {
 	// get regions via cluster status because this way we can get
 	// regionservers that don't have any regions
 	cs, err := r.GhAdmin.ClusterStatus()
@@ -327,7 +185,7 @@ func (rst *regionServerTargets) Pop() interface{} {
 
 // TODO: make parallel
 func (r *HBaseReconciler) moveRegions(ctx context.Context, regions [][]byte, targets regionServerTargets) error {
-	// important to understand that this heuristic to deside which regionserver to move
+	// important to understand that this heuristic to decide which regionserver to move
 	// to does not account for the most recent state of the cluster. For example, if some
 	// regionserver were to be restarted during region moving, the region counts will not be updated.
 	var err error
@@ -345,8 +203,12 @@ func (r *HBaseReconciler) moveRegions(ctx context.Context, regions [][]byte, tar
 			rc.regionCount++
 			heap.Push(&targets, rc)
 		} else {
-			// moving regions without a particular target - this is not an error case and guaranteed to hit when draining the first regionserver in the cluster
-			r.Log.Info("regionservers are balanced and there isn't a regionserver with least regions; moving regions without particular regionserver target", "region", string(region))
+			// moving regions without a particular target - this is not an error case and guaranteed
+			// to hit when draining the first regionserver in the cluster
+			r.Log.Info(
+				"regionservers are balanced; moving regions without particular regionserver target",
+				"region", string(region),
+			)
 			mr, err = hrpc.NewMoveRegion(ctx, region)
 		}
 		if err != nil {
@@ -474,7 +336,7 @@ func (r *HBaseReconciler) pickMasterToDelete(ctx context.Context, td, utd []*cor
 }
 
 func sprintPodList(l []*corev1.Pod) string {
-	var podNames []string
+	podNames := make([]string, 0, len(l))
 	for _, p := range l {
 		podNames = append(podNames, p.Name)
 	}
@@ -621,7 +483,7 @@ func configMapVolume(cmName types.NamespacedName) corev1.Volume {
 		Name: "config",
 		VolumeSource: corev1.VolumeSource{
 			ConfigMap: &corev1.ConfigMapVolumeSource{
-				DefaultMode: pointer.Int32Ptr(420),
+				DefaultMode: ptr.To(int32(420)),
 				LocalObjectReference: corev1.LocalObjectReference{
 					Name: cmName.Name,
 				},
@@ -651,7 +513,7 @@ const (
 
 var (
 	ignoreTemplateMetadataAnnotations = map[string]struct{}{
-		"kubectl.kubernetes.io/last-applied-configuration": struct{}{},
+		"kubectl.kubernetes.io/last-applied-configuration": {},
 	}
 )
 
@@ -695,7 +557,7 @@ func (r *HBaseReconciler) statefulSet(hb *hbasev1.HBase,
 	rev := fmt.Sprintf("%x", h.Sum(nil))
 
 	// After revision hash calculation, actually update replica count
-	stsSpec.Replicas = pointer.Int32Ptr(ss.Count)
+	stsSpec.Replicas = ptr.To(ss.Count)
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -732,7 +594,7 @@ func (r *HBaseReconciler) configMap(hb *hbasev1.HBase,
 			Labels:      cloneMap(configMapLabels, hb.Labels),
 			Annotations: cloneMap(hb.Annotations),
 		},
-		Immutable: pointer.BoolPtr(true),
+		Immutable: ptr.To(true),
 		Data:      hb.Spec.Config.Data,
 	}
 	if err := controllerutil.SetControllerReference(hb, cm, r.Scheme); err != nil {
@@ -754,22 +616,13 @@ func (r *HBaseReconciler) headlessService(hb *hbasev1.HBase) *corev1.Service {
 			ClusterIP: "None",
 			Selector:  map[string]string{"app": "hbase"},
 			Ports: []corev1.ServicePort{
-				corev1.ServicePort{
+				{
 					Name: "placeholder",
 					Port: 1234,
 				},
 			},
 		},
 	}
-	controllerutil.SetControllerReference(hb, srv, r.Scheme)
+	_ = controllerutil.SetControllerReference(hb, srv, r.Scheme)
 	return srv
-}
-
-func (r *HBaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&hbasev1.HBase{}).
-		Owns(&corev1.Service{}).
-		Owns(&corev1.ConfigMap{}).
-		Owns(&appsv1.StatefulSet{}).
-		Complete(r)
 }

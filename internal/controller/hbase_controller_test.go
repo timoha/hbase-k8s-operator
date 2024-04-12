@@ -1,6 +1,4 @@
 /*
-Copyright 2023.
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -14,56 +12,26 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controllers
+package controller
 
 import (
 	"context"
 	"errors"
-	"path/filepath"
-	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	gomock "github.com/golang/mock/gomock"
-	"github.com/tsuna/gohbase/pb"
-	"github.com/tsuna/gohbase/test/mock"
-
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/rest"
-	"k8s.io/utils/pointer"
-	ctrl "sigs.k8s.io/controller-runtime"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	hbasev1 "github.com/timoha/hbase-k8s-operator/api/v1"
 	//+kubebuilder:scaffold:imports
 )
-
-// These tests use Ginkgo (BDD-style Go testing framework). Refer to
-// http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
-
-var (
-	cfg       *rest.Config
-	k8sClient client.Client
-	testEnv   *envtest.Environment
-	ghAdmin   *mock.MockAdminClient
-	ctx       context.Context
-	cancel    context.CancelFunc
-)
-
-func TestAPIs(t *testing.T) {
-	RegisterFailHandler(Fail)
-
-	RunSpecs(t, "Controller Suite")
-}
 
 func makeHBaseSpec(confData map[string]string) *hbasev1.HBase {
 	return &hbasev1.HBase{
@@ -81,10 +49,10 @@ func makeHBaseSpec(confData map[string]string) *hbasev1.HBase {
 				},
 				PodSpec: corev1.PodSpec{
 					Containers: []corev1.Container{
-						corev1.Container{
+						{
 							Name: "server",
 							VolumeMounts: []corev1.VolumeMount{
-								corev1.VolumeMount{
+								{
 									Name:      "config",
 									MountPath: "/hbase/conf/hbase-site.xml",
 									SubPath:   "hbase-site.xml",
@@ -103,10 +71,10 @@ func makeHBaseSpec(confData map[string]string) *hbasev1.HBase {
 				},
 				PodSpec: corev1.PodSpec{
 					Containers: []corev1.Container{
-						corev1.Container{
+						{
 							Name: "server",
 							VolumeMounts: []corev1.VolumeMount{
-								corev1.VolumeMount{
+								{
 									Name:      "config",
 									MountPath: "/hbase/conf/hbase-site.xml",
 									SubPath:   "hbase-site.xml",
@@ -122,61 +90,6 @@ func makeHBaseSpec(confData map[string]string) *hbasev1.HBase {
 		},
 	}
 }
-
-var _ = BeforeSuite(func() {
-	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
-
-	ctx, cancel = context.WithCancel(context.TODO())
-
-	gomockCtrl := gomock.NewController(GinkgoT())
-	defer gomockCtrl.Finish()
-	ghAdmin = mock.NewMockAdminClient(gomockCtrl)
-	ghAdmin.EXPECT().ClusterStatus().AnyTimes().Return(&pb.ClusterStatus{}, nil)
-	ghAdmin.EXPECT().SetBalancer(gomock.Any()).AnyTimes()
-
-	By("bootstrapping test environment")
-	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "config", "crd", "bases")},
-		ErrorIfCRDPathMissing: true,
-	}
-
-	var err error
-	// cfg is defined in this file globally.
-	cfg, err = testEnv.Start()
-	Expect(err).NotTo(HaveOccurred())
-	Expect(cfg).NotTo(BeNil())
-
-	err = hbasev1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	//+kubebuilder:scaffold:scheme
-
-	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-	Expect(err).ToNot(HaveOccurred())
-	Expect(k8sClient).ToNot(BeNil())
-
-	// Start hbase controller
-	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
-		Scheme:    scheme.Scheme,
-		Namespace: "default",
-	})
-	Expect(err).ToNot(HaveOccurred())
-
-	err = (&HBaseReconciler{
-		Client:  k8sManager.GetClient(),
-		Log:     ctrl.Log.WithName("controllers").WithName("HBase"),
-		Scheme:  k8sManager.GetScheme(),
-		GhAdmin: ghAdmin,
-	}).SetupWithManager(k8sManager)
-	Expect(err).ToNot(HaveOccurred())
-
-	go func() {
-		defer GinkgoRecover()
-		err = k8sManager.Start(ctx)
-		Expect(err).ToNot(HaveOccurred())
-	}()
-
-})
 
 var _ = Describe("HBase controller", func() {
 	var (
@@ -246,7 +159,7 @@ var _ = Describe("HBase controller", func() {
 				Name: "config",
 				VolumeSource: corev1.VolumeSource{
 					ConfigMap: &corev1.ConfigMapVolumeSource{
-						DefaultMode: pointer.Int32Ptr(420),
+						DefaultMode: ptr.To(int32(420)),
 						LocalObjectReference: corev1.LocalObjectReference{
 							Name: createdConfigMap.Name,
 						},
@@ -273,7 +186,7 @@ var _ = Describe("HBase controller", func() {
 				Name: "config",
 				VolumeSource: corev1.VolumeSource{
 					ConfigMap: &corev1.ConfigMapVolumeSource{
-						DefaultMode: pointer.Int32Ptr(420),
+						DefaultMode: ptr.To(int32(420)),
 						LocalObjectReference: corev1.LocalObjectReference{
 							Name: createdConfigMap.Name,
 						},
@@ -550,11 +463,4 @@ var _ = Describe("HBase controller", func() {
 
 		})
 	})
-})
-
-var _ = AfterSuite(func() {
-	cancel() // Shutdown manager
-	By("tearing down the test environment")
-	err := testEnv.Stop()
-	Expect(err).ToNot(HaveOccurred())
 })

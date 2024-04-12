@@ -1,11 +1,9 @@
 /*
-
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -14,7 +12,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controllers
+package controller
 
 import (
 	"testing"
@@ -64,8 +62,16 @@ func TestOrderPodList(t *testing.T) {
 		},
 		// Multiple pods
 		{
-			given:  createPodListByName([]string{"regionserver-0", "regionserver-1", "regionserver-2", "regionserver-3", "regionserver-9", "regionserver-10", "regionserver-11", "regionserver-12"}),
-			expect: createPodListByName([]string{"regionserver-12", "regionserver-11", "regionserver-10", "regionserver-9", "regionserver-3", "regionserver-2", "regionserver-1", "regionserver-0"}),
+			given: createPodListByName([]string{
+				"regionserver-0", "regionserver-1", "regionserver-2",
+				"regionserver-3", "regionserver-9", "regionserver-10",
+				"regionserver-11", "regionserver-12",
+			}),
+			expect: createPodListByName([]string{
+				"regionserver-12", "regionserver-11", "regionserver-10",
+				"regionserver-9", "regionserver-3", "regionserver-2",
+				"regionserver-1", "regionserver-0",
+			}),
 		},
 	}
 
@@ -77,7 +83,7 @@ func TestOrderPodList(t *testing.T) {
 		if len(pl1.Items) != len(pl2.Items) {
 			return false
 		}
-		for i, _ := range pl1.Items {
+		for i := range pl1.Items {
 			if pl1.Items[i].Name != pl2.Items[i].Name {
 				return false
 			}

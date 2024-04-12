@@ -4,10 +4,7 @@
 # More info: https://book.kubebuilder.io/reference/project-config.html
 domain: elenskiy.co
 layout:
-- go.kubebuilder.io/v3
-plugins:
-  manifests.sdk.operatorframework.io/v2: {}
-  scorecard.sdk.operatorframework.io/v2: {}
+- go.kubebuilder.io/v4
 projectName: hbase-k8s-operator
 repo: github.com/timoha/hbase-k8s-operator
 resources:
