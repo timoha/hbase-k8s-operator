@@ -53,6 +53,7 @@ func main() {
 	var (
 		metricsAddr          string
 		pprofAddr            string
+		leaderElect          bool
 		enableLeaderElection bool
 		probeAddr            string
 		namespace            string
@@ -61,9 +62,11 @@ func main() {
 	flag.StringVar(&metricsAddr, "metrics-addr", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&pprofAddr, "pprof-addr", ":6060", "The address the pprof endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
+	flag.BoolVar(&leaderElect, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	flag.BoolVar(&enableLeaderElection, "enable-leader-election", false,
+		"Old name for -leader-elect provided for backward compatibility.")
 	flag.StringVar(&namespace, "namespace", "hbase", "The namespace to watch for resource definitions.")
 	flag.StringVar(&zkQuorum, "zkquorum", "localhost:2181",
 		"Comma-separated list of zookeeper addresses.")
@@ -93,7 +96,7 @@ func main() {
 		},
 		HealthProbeBindAddress: probeAddr,
 		PprofBindAddress:       pprofAddr,
-		LeaderElection:         enableLeaderElection,
+		LeaderElection:         leaderElect || enableLeaderElection,
 		LeaderElectionID:       "52ea4f9c.elenskiy.co",
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
