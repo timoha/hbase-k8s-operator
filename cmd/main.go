@@ -57,6 +57,7 @@ func main() {
 		probeAddr            string
 		namespace            string
 		zkQuorum             string
+		zkRoot               string
 	)
 	flag.StringVar(&metricsAddr, "metrics-addr", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&pprofAddr, "pprof-addr", ":6060", "The address the pprof endpoint binds to.")
@@ -67,6 +68,8 @@ func main() {
 	flag.StringVar(&namespace, "namespace", "hbase", "The namespace to watch for resource definitions.")
 	flag.StringVar(&zkQuorum, "zkquorum", "localhost:2181",
 		"Comma-separated list of zookeeper addresses.")
+	flag.StringVar(&zkRoot, "zkroot", "/hbase",
+		"Zookeeper root znode for hbase.")
 
 	opts := zap.Options{
 		Development: true,
@@ -116,7 +119,7 @@ func main() {
 		Client:  mgr.GetClient(),
 		Scheme:  mgr.GetScheme(),
 		Log:     ctrl.Log.WithName("controllers").WithName("HBase"),
-		GhAdmin: gohbase.NewAdminClient(zkQuorum),
+		GhAdmin: gohbase.NewAdminClient(zkQuorum, gohbase.ZookeeperRoot(zkRoot)),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "HBase")
 		os.Exit(1)

@@ -26,8 +26,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus"
 	hbasev1 "github.com/timoha/hbase-k8s-operator/api/v1"
 	"github.com/tsuna/gohbase"
 )
@@ -40,6 +42,23 @@ type HBaseReconciler struct {
 	Log     logr.Logger
 	GhAdmin gohbase.AdminClient
 }
+
+const (
+	promNamespace = "hbase"
+	promSubsystem = "operator"
+)
+
+var (
+	hbaseReconciliationPhaseMetric = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      "reconciliation_status",
+			Help:      "Current reconciliation status of HBase",
+			Namespace: promNamespace,
+			Subsystem: promSubsystem,
+		},
+		[]string{"namespace", "name", "phase", "progress"},
+	)
+)
 
 //+kubebuilder:rbac:groups=hbase.elenskiy.co,resources=hbases,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=hbase.elenskiy.co,resources=hbases/status,verbs=get;update;patch
@@ -75,13 +94,22 @@ func (r *HBaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 
 	log.Info("got HBase CRD")
+	if app.Status.Phase == "" {
+		app.Status.Phase = hbasev1.HBaseApplyingChangesPhase
+	}
+
+	// Update the state when this function exits
+	defer r.updateStatus(ctx, app)
 
 	serviceOk, err := r.ensureService(app)
 	if err != nil {
+		app.Status.Phase = hbasev1.HBaseResourceInvalidPhase
 		return ctrl.Result{}, err
 	}
 	if !serviceOk {
 		log.Info("HBase service reconfigured, reconciling again")
+		app.Status.Phase = hbasev1.HBaseApplyingChangesPhase
+		app.Status.ReconcileProgress = hbasev1.HBaseProgressUpdatingService
 		return ctrl.Result{Requeue: true}, nil
 	}
 	log.Info("HBase headless service is in sync")
@@ -90,10 +118,13 @@ func (r *HBaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	configMapName := getConfigMapName(app)
 	cmOk, err := r.ensureConfigMap(app, configMapName)
 	if err != nil {
+		app.Status.Phase = hbasev1.HBaseResourceInvalidPhase
 		return ctrl.Result{}, err
 	}
 	if !cmOk {
 		log.Info("HBase ConfigMap reconfigured, reconciling again")
+		app.Status.Phase = hbasev1.HBaseApplyingChangesPhase
+		app.Status.ReconcileProgress = hbasev1.HBaseProgressUpdatingCM
 		return ctrl.Result{Requeue: true}, nil
 	}
 	log.Info("HBase ConfigMap is in sync")
@@ -103,10 +134,13 @@ func (r *HBaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	masterSts, masterUpdated, err := r.ensureStatefulSet(app, masterName, configMapName, app.Spec.MasterSpec)
 	if err != nil {
 		r.Log.Error(err, "Failed reconciling HBase Master StatefulSet")
+		app.Status.Phase = hbasev1.HBaseResourceInvalidPhase
 		return ctrl.Result{}, err
 	}
 	if masterUpdated {
 		log.Info("HBase Master StatefulSet updated, reconciling again")
+		app.Status.Phase = hbasev1.HBaseApplyingChangesPhase
+		app.Status.ReconcileProgress = hbasev1.HBaseProgressUpdatingMasters
 		return ctrl.Result{Requeue: true}, nil
 	}
 	log.Info("HBase Master StatefulSet is in sync")
@@ -116,10 +150,13 @@ func (r *HBaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	rsSts, rsUpdated, err := r.ensureStatefulSet(app, rsName, configMapName, app.Spec.RegionServerSpec)
 	if err != nil {
 		r.Log.Error(err, "Failed reconciling HBase RegionServer StatefulSet")
+		app.Status.Phase = hbasev1.HBaseResourceInvalidPhase
 		return ctrl.Result{}, err
 	}
 	if rsUpdated {
 		log.Info("HBase RegionServer StatefulSet updated")
+		app.Status.Phase = hbasev1.HBaseApplyingChangesPhase
+		app.Status.ReconcileProgress = hbasev1.HBaseProgressUpdatingRS
 		return ctrl.Result{Requeue: true}, nil
 	}
 	log.Info("RegionServer StatefulSet is in sync")
@@ -129,10 +166,13 @@ func (r *HBaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	// be able to fix incorrect config and not fight with operator
 	rit, err := r.regionsInTransition()
 	if err != nil {
+		app.Status.Phase = hbasev1.HBaseResourceInvalidPhase
 		return ctrl.Result{}, fmt.Errorf("failed to get regions in transition: %v", err)
 	}
 	if rit != 0 {
 		log.Info("There are regions in transition, wait and restart reconciling", "regions", rit)
+		app.Status.Phase = hbasev1.HBaseApplyingChangesPhase
+		app.Status.ReconcileProgress = hbasev1.HBaseProgressWaitingRegionTransition
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 	log.Info("There are no regions in transition")
@@ -141,9 +181,12 @@ func (r *HBaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	mastersOk, err := r.ensureStatefulSetPods(ctx, masterSts, r.pickMasterToDelete)
 	if err != nil {
 		r.Log.Error(err, "Failed reconciling HBase Master pods")
+		app.Status.Phase = hbasev1.HBaseResourceInvalidPhase
 		return ctrl.Result{}, err
 	}
 	if !mastersOk {
+		app.Status.Phase = hbasev1.HBaseApplyingChangesPhase
+		app.Status.ReconcileProgress = hbasev1.HBaseProgressWaitingMasters
 		return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
 	}
 
@@ -151,18 +194,25 @@ func (r *HBaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	rsOk, err := r.ensureStatefulSetPods(ctx, rsSts, r.pickRegionServerToDelete)
 	if err != nil {
 		r.Log.Error(err, "Failed reconciling HBase RegionServer pods")
+		app.Status.Phase = hbasev1.HBaseResourceInvalidPhase
 		return ctrl.Result{}, err
 	}
 	if !rsOk {
+		app.Status.Phase = hbasev1.HBaseApplyingChangesPhase
+		app.Status.ReconcileProgress = hbasev1.HBaseProgressWaitingRS
 		return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
 	}
 
 	r.Log.Info("Deleting unused config maps")
+	app.Status.ReconcileProgress = hbasev1.HBaseProgressDelUnusedCM
 	if err := r.deleteUnusedConfigMaps(ctx, app, configMapName); err != nil {
+		app.Status.Phase = hbasev1.HBaseResourceInvalidPhase
 		return ctrl.Result{}, err
 	}
 
 	r.Log.Info("Everything is up to date!")
+	app.Status.Phase = hbasev1.HBaseReadyPhase
+	app.Status.ReconcileProgress = hbasev1.HBaseProgressReady
 	return ctrl.Result{}, nil
 }
 
@@ -174,4 +224,8 @@ func (r *HBaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.ConfigMap{}).
 		Owns(&appsv1.StatefulSet{}).
 		Complete(r)
+}
+
+func init() {
+	metrics.Registry.MustRegister(hbaseReconciliationPhaseMetric)
 }

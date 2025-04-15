@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"github.com/davecgh/go-spew/spew"
+	"github.com/prometheus/client_golang/prometheus"
 	hbasev1 "github.com/timoha/hbase-k8s-operator/api/v1"
 	"github.com/tsuna/gohbase/hrpc"
 	appsv1 "k8s.io/api/apps/v1"
@@ -625,4 +626,15 @@ func (r *HBaseReconciler) headlessService(hb *hbasev1.HBase) *corev1.Service {
 	}
 	_ = controllerutil.SetControllerReference(hb, srv, r.Scheme)
 	return srv
+}
+
+// updateStatus updates the status of hbase and exposes same as a metrics
+func (r *HBaseReconciler) updateStatus(ctx context.Context, hb *hbasev1.HBase) {
+	// update reconciliation phase metrics
+	hbaseReconciliationPhaseMetric.DeletePartialMatch(
+		prometheus.Labels{"namespace": hb.Namespace, "name": hb.Name})
+	hbaseReconciliationPhaseMetric.WithLabelValues(
+		hb.Namespace, hb.Name, string(hb.Status.Phase), string(hb.Status.ReconcileProgress)).Set(1)
+
+	r.Status().Update(ctx, hb)
 }

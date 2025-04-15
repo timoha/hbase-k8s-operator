@@ -261,6 +261,13 @@ var _ = Describe("HBase controller", func() {
 			hb.Spec.RegionServerSpec.Count = 3
 			Expect(k8sClient.Update(ctx, hb)).Should(Succeed())
 
+			By("By checking phase in status is ApplyingChanges")
+			Eventually(func() bool {
+				k8sClient.Get(ctx, hbaseLookupKey, hb)
+				return hb.Status.Phase == hbasev1.HBaseApplyingChangesPhase &&
+					hb.Status.ReconcileProgress == hbasev1.HBaseProgressUpdatingCM
+			}, 2*time.Second, 1*time.Millisecond).Should(BeTrue())
+
 			By("By checking HBase deployed new config map")
 			Eventually(func() ([]corev1.ConfigMap, error) {
 				configMapList := &corev1.ConfigMapList{}
@@ -318,6 +325,16 @@ var _ = Describe("HBase controller", func() {
 				return int(*updatedRsSts.Spec.Replicas), nil
 			}, timeout, interval).Should(Equal(3))
 
+			By("By checking phase in status is Reconciled")
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, hbaseLookupKey, hb)
+				if err != nil {
+					return false
+				}
+				return hb.Status.Phase == hbasev1.HBaseReadyPhase &&
+					hb.Status.ReconcileProgress == hbasev1.HBaseProgressReady
+			}, timeout, interval).Should(BeTrue())
+
 			// --------------------------- TEST 2 ---------------------------
 			// Clear test vars
 			getExistingCm()
@@ -331,6 +348,13 @@ var _ = Describe("HBase controller", func() {
 			hb.Spec.MasterSpec.Count = 1
 			hb.Spec.RegionServerSpec.Count = 5
 			Expect(k8sClient.Update(ctx, hb)).Should(Succeed())
+
+			By("By checking phase in status is ApplyingChanges")
+			Eventually(func() bool {
+				k8sClient.Get(ctx, hbaseLookupKey, hb)
+				return hb.Status.Phase == hbasev1.HBaseApplyingChangesPhase &&
+					hb.Status.ReconcileProgress == hbasev1.HBaseProgressUpdatingMasters
+			}, 2*time.Second, 1*time.Millisecond).Should(BeTrue())
 
 			By("By checking HBase configmap was not updated")
 			Eventually(func() ([]corev1.ConfigMap, error) {
@@ -389,6 +413,16 @@ var _ = Describe("HBase controller", func() {
 				return int(*updatedRsSts.Spec.Replicas), nil
 			}, timeout, interval).Should(Equal(5))
 
+			By("By checking phase in status is Reconciled")
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, hbaseLookupKey, hb)
+				if err != nil {
+					return false
+				}
+				return hb.Status.Phase == hbasev1.HBaseReadyPhase &&
+					hb.Status.ReconcileProgress == hbasev1.HBaseProgressReady
+			}, timeout, interval).Should(BeTrue())
+
 			// --------------------------- TEST 3 ---------------------------
 			// Clear test vars
 			getExistingCm()
@@ -403,6 +437,13 @@ var _ = Describe("HBase controller", func() {
 			hb.Spec.MasterSpec.Count = 2
 			hb.Spec.RegionServerSpec.Count = 3
 			Expect(k8sClient.Update(ctx, hb)).Should(Succeed())
+
+			By("By checking phase in status is ApplyingChanges")
+			Eventually(func() bool {
+				k8sClient.Get(ctx, hbaseLookupKey, hb)
+				return hb.Status.Phase == hbasev1.HBaseApplyingChangesPhase &&
+					hb.Status.ReconcileProgress == hbasev1.HBaseProgressUpdatingCM
+			}, 2*time.Second, 1*time.Millisecond).Should(BeTrue())
 
 			By("By checking HBase configmap is updated")
 			Eventually(func() ([]corev1.ConfigMap, error) {
@@ -460,6 +501,16 @@ var _ = Describe("HBase controller", func() {
 				}
 				return int(*updatedRsSts.Spec.Replicas), nil
 			}, timeout, interval).Should(Equal(3))
+
+			By("By checking phase in status is Reconciled")
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, hbaseLookupKey, hb)
+				if err != nil {
+					return false
+				}
+				return hb.Status.Phase == hbasev1.HBaseReadyPhase &&
+					hb.Status.ReconcileProgress == hbasev1.HBaseProgressReady
+			}, timeout, interval).Should(BeTrue())
 
 		})
 	})

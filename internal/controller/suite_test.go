@@ -21,12 +21,12 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	hbasev1 "github.com/timoha/hbase-k8s-operator/api/v1"
 	"github.com/tsuna/gohbase/pb"
 	"github.com/tsuna/gohbase/test/mock"
+	"go.uber.org/mock/gomock"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
